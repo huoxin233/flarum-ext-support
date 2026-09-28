@@ -98,7 +98,7 @@ class SupportServiceProvider extends AbstractServiceProvider
                     $events->dispatch(new TicketAssigned(
                         $ticket,
                         $reply->user,
-                        $ticket->assignedStaff,
+                        $reply->user,
                         null
                     ));
                 }

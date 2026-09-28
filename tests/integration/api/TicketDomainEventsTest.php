@@ -143,4 +143,69 @@ class TicketDomainEventsTest extends TestCase
         $this->assertEquals(SupportTicket::DECISION_ACCEPTED, $decisionEvents[0]->newDecision);
         $this->assertEquals(3, $decisionEvents[0]->actor->id);
     }
+
+    #[Test]
+    public function assigning_and_unassigning_dispatches_ticket_assigned_event(): void
+    {
+        $ticketId = $this->database()->table('linkrobins_support_tickets')->insertGetId([
+            'category_id' => 1,
+            'user_id' => 2,
+            'subject' => 'Assign me',
+            'status' => SupportTicket::STATUS_OPEN,
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
+        self::$dispatchedEvents = [];
+
+        // 1. Assign to staff3
+        $response = $this->send(
+            $this->request('PATCH', "/api/linkrobins-support-tickets/$ticketId", [
+                'authenticatedAs' => 3,
+                'json' => [
+                    'data' => [
+                        'type' => 'linkrobins-support-tickets',
+                        'id' => (string) $ticketId,
+                        'relationships' => [
+                            'assignedStaff' => ['data' => ['type' => 'users', 'id' => '3']],
+                        ],
+                    ],
+                ],
+            ])
+        );
+
+        $this->assertEquals(200, $response->getStatusCode());
+
+        $assignedEvents = array_values(array_filter(self::$dispatchedEvents, fn ($e) => $e instanceof TicketAssigned));
+        $this->assertCount(1, $assignedEvents);
+        $this->assertEquals(3, $assignedEvents[0]->assignee?->id);
+        $this->assertNull($assignedEvents[0]->oldAssignee);
+        $this->assertEquals(3, $assignedEvents[0]->actor?->id);
+
+        self::$dispatchedEvents = [];
+
+        // 2. Unassign
+        $response = $this->send(
+            $this->request('PATCH', "/api/linkrobins-support-tickets/$ticketId", [
+                'authenticatedAs' => 3,
+                'json' => [
+                    'data' => [
+                        'type' => 'linkrobins-support-tickets',
+                        'id' => (string) $ticketId,
+                        'relationships' => [
+                            'assignedStaff' => ['data' => null],
+                        ],
+                    ],
+                ],
+            ])
+        );
+
+        $this->assertEquals(200, $response->getStatusCode());
+
+        $unassignedEvents = array_values(array_filter(self::$dispatchedEvents, fn ($e) => $e instanceof TicketAssigned));
+        $this->assertCount(1, $unassignedEvents);
+        $this->assertNull($unassignedEvents[0]->assignee);
+        $this->assertEquals(3, $unassignedEvents[0]->oldAssignee?->id);
+    }
 }
+

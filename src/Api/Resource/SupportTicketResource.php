@@ -513,7 +513,7 @@ class SupportTicketResource extends AbstractDatabaseResource
             return $ticket;
         }
 
-        return SupportTicket::query()->getConnection()->transaction(function () use ($model, $context, $actor) {
+        $ticket = SupportTicket::query()->getConnection()->transaction(function () use ($model, $context, $actor) {
             // Lock this user's row for the duration of the insert so their
             // concurrent creates serialize (a no-op on SQLite, which already
             // serializes writes). The re-check below then sees a consistent,
@@ -538,10 +538,12 @@ class SupportTicketResource extends AbstractDatabaseResource
             // body rolls the whole thing back -- no body-less tickets.
             $this->createFirstReply($ticket, $context);
 
-            $this->events->dispatch(new TicketCreated($ticket, $actor));
-
             return $ticket;
         });
+
+        $this->events->dispatch(new TicketCreated($ticket, $actor));
+
+        return $ticket;
     }
 
     /**
@@ -656,20 +658,25 @@ class SupportTicketResource extends AbstractDatabaseResource
             ));
         }
 
-        $assignee = array_key_exists('assigned_staff_id', $changes)
-            ? ($changes['assigned_staff_id'] === null ? null : (int) $changes['assigned_staff_id'])
-            : null;
+        $assigneeChanged = array_key_exists('assigned_staff_id', $changes)
+            && $changes['assigned_staff_id'] !== $before['assignee'];
 
-        // Only a new assignee is worth announcing. Unassigning tells nobody --
-        // there is no one to tell -- and re-saving the same assignee is not a
-        // handover.
-        if ($assignee !== null && $assignee !== $before['assignee']) {
-            $this->bus->dispatch(new NotifyAssigned((int) $model->id, $actorId));
+        if ($assigneeChanged) {
+            $newAssigneeId = $changes['assigned_staff_id'] === null ? null : (int) $changes['assigned_staff_id'];
+            $oldAssigneeId = $before['assignee'];
+
+            // Only a new assignee is worth announcing. Unassigning tells nobody --
+            // there is no one to tell -- and re-saving the same assignee is not a
+            // handover.
+            if ($newAssigneeId !== null) {
+                $this->bus->dispatch(new NotifyAssigned((int) $model->id, $actorId));
+            }
+
             $this->events->dispatch(new TicketAssigned(
                 $model,
                 $actor->isGuest() ? null : $actor,
-                $model->assignedStaff,
-                $before['assignee'] ? User::find($before['assignee']) : null,
+                $newAssigneeId ? User::find($newAssigneeId) : null,
+                $oldAssigneeId ? User::find($oldAssigneeId) : null,
             ));
         }
 
