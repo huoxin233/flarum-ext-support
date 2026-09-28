@@ -96,6 +96,13 @@ class TicketDomainEventsTest extends TestCase
         $event = reset($createdEvents);
         $this->assertEquals('Need Help', $event->ticket->subject);
         $this->assertEquals(2, $event->actor->id);
+
+        // Opening message must not dispatch a redundant ReplyCreated or TicketStatusChanged
+        $replyEvents = array_filter(self::$dispatchedEvents, fn ($e) => $e instanceof ReplyCreated);
+        $this->assertCount(0, $replyEvents, 'Opening message must not dispatch ReplyCreated');
+
+        $statusEvents = array_filter(self::$dispatchedEvents, fn ($e) => $e instanceof TicketStatusChanged);
+        $this->assertCount(0, $statusEvents, 'Initial ticket creation must not dispatch TicketStatusChanged');
     }
 
     #[Test]
@@ -142,6 +149,25 @@ class TicketDomainEventsTest extends TestCase
         $this->assertEquals(SupportTicket::DECISION_PENDING, $decisionEvents[0]->oldDecision);
         $this->assertEquals(SupportTicket::DECISION_ACCEPTED, $decisionEvents[0]->newDecision);
         $this->assertEquals(3, $decisionEvents[0]->actor->id);
+
+        // A no-op update with identical values must NOT re-dispatch events
+        self::$dispatchedEvents = [];
+        $this->send(
+            $this->request('PATCH', "/api/linkrobins-support-tickets/$ticketId", [
+                'authenticatedAs' => 3,
+                'json' => [
+                    'data' => [
+                        'type' => 'linkrobins-support-tickets',
+                        'id' => (string) $ticketId,
+                        'attributes' => [
+                            'status' => SupportTicket::STATUS_RESOLVED,
+                            'decision' => SupportTicket::DECISION_ACCEPTED,
+                        ],
+                    ],
+                ],
+            ])
+        );
+        $this->assertEmpty(self::$dispatchedEvents, 'No-op update must not dispatch any events');
     }
 
     #[Test]
@@ -247,6 +273,61 @@ class TicketDomainEventsTest extends TestCase
         $this->assertCount(1, $replyEvents);
         $this->assertEquals('Staff response message', $replyEvents[0]->reply->content);
         $this->assertEquals(3, $replyEvents[0]->actor?->id);
+
+        // Staff replying to an open unassigned ticket automatically claims it and advances status
+        $statusEvents = array_values(array_filter(self::$dispatchedEvents, fn ($e) => $e instanceof TicketStatusChanged));
+        $this->assertCount(1, $statusEvents);
+        $this->assertEquals(SupportTicket::STATUS_OPEN, $statusEvents[0]->oldStatus);
+        $this->assertEquals(SupportTicket::STATUS_IN_PROGRESS, $statusEvents[0]->newStatus);
+        $this->assertEquals(3, $statusEvents[0]->actor?->id);
+
+        $assignedEvents = array_values(array_filter(self::$dispatchedEvents, fn ($e) => $e instanceof TicketAssigned));
+        $this->assertCount(1, $assignedEvents);
+        $this->assertEquals(3, $assignedEvents[0]->assignee?->id);
+        $this->assertNull($assignedEvents[0]->oldAssignee);
+    }
+
+    #[Test]
+    public function user_replying_to_awaiting_user_ticket_dispatches_status_changed_event(): void
+    {
+        $ticketId = $this->database()->table('linkrobins_support_tickets')->insertGetId([
+            'category_id' => 1,
+            'user_id' => 2,
+            'assigned_staff_id' => 3,
+            'subject' => 'Awaiting user response',
+            'status' => SupportTicket::STATUS_AWAITING_USER,
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
+        self::$dispatchedEvents = [];
+
+        $response = $this->send(
+            $this->request('POST', '/api/linkrobins-support-replies', [
+                'authenticatedAs' => 2,
+                'json' => [
+                    'data' => [
+                        'type' => 'linkrobins-support-replies',
+                        'attributes' => [
+                            'content' => 'Here is the requested information.',
+                        ],
+                        'relationships' => [
+                            'ticket' => [
+                                'data' => ['type' => 'linkrobins-support-tickets', 'id' => (string) $ticketId],
+                            ],
+                        ],
+                    ],
+                ],
+            ])
+        );
+
+        $this->assertEquals(201, $response->getStatusCode());
+
+        $statusEvents = array_values(array_filter(self::$dispatchedEvents, fn ($e) => $e instanceof TicketStatusChanged));
+        $this->assertCount(1, $statusEvents);
+        $this->assertEquals(SupportTicket::STATUS_AWAITING_USER, $statusEvents[0]->oldStatus);
+        $this->assertEquals(SupportTicket::STATUS_IN_PROGRESS, $statusEvents[0]->newStatus);
+        $this->assertEquals(2, $statusEvents[0]->actor?->id);
     }
 }
 
