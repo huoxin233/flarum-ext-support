@@ -9,9 +9,9 @@ use Flarum\Api\Resource\AbstractDatabaseResource;
 use Flarum\Api\Schema;
 use Flarum\Api\Sort\SortColumn;
 use Flarum\Locale\TranslatorInterface;
+use Flarum\User\User;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
-use Flarum\User\User;
 use Illuminate\Database\Eloquent\Builder;
 use LinkRobins\Support\Access\SupportAbilities;
 use LinkRobins\Support\Event\TicketAssigned;
@@ -507,9 +507,7 @@ class SupportTicketResource extends AbstractDatabaseResource
 
         if ($actor->isGuest() || empty($model->category_id)) {
             $ticket = parent::create($model, $context);
-            if (! $actor->isGuest()) {
-                $this->events->dispatch(new TicketCreated($ticket, $actor));
-            }
+            $this->events->dispatch(new TicketCreated($ticket, $actor->isGuest() ? null : $actor));
             return $ticket;
         }
 
@@ -672,11 +670,24 @@ class SupportTicketResource extends AbstractDatabaseResource
                 $this->bus->dispatch(new NotifyAssigned((int) $model->id, $actorId));
             }
 
+            $resolveUser = function (?int $id) use ($actor, $model): ?User {
+                if ($id === null) {
+                    return null;
+                }
+                if (! $actor->isGuest() && (int) $actor->id === $id) {
+                    return $actor;
+                }
+                if ($model->relationLoaded('assignedStaff') && $model->assignedStaff && (int) $model->assignedStaff->id === $id) {
+                    return $model->assignedStaff;
+                }
+                return User::query()->find($id);
+            };
+
             $this->events->dispatch(new TicketAssigned(
                 $model,
                 $actor->isGuest() ? null : $actor,
-                $newAssigneeId ? User::query()->find($newAssigneeId) : null,
-                $oldAssigneeId ? User::query()->find($oldAssigneeId) : null,
+                $resolveUser($newAssigneeId),
+                $resolveUser($oldAssigneeId),
             ));
         }
 

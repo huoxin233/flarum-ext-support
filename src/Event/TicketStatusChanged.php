@@ -14,7 +14,7 @@ class TicketStatusChanged
         public SupportTicket $ticket,
         public ?User $actor,
         public ?string $oldStatus,
-        public string $newStatus
+        public string $newStatus,
     ) {
     }
 }

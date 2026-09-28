@@ -14,7 +14,7 @@ class TicketAssigned
         public SupportTicket $ticket,
         public ?User $actor,
         public ?User $assignee,
-        public ?User $oldAssignee = null
+        public ?User $oldAssignee = null,
     ) {
     }
 }

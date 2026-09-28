@@ -12,7 +12,7 @@ class TicketCreated
 {
     public function __construct(
         public SupportTicket $ticket,
-        public User $actor
+        public ?User $actor = null,
     ) {
     }
 }

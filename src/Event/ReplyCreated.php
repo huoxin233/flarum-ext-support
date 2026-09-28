@@ -12,7 +12,7 @@ class ReplyCreated
 {
     public function __construct(
         public SupportReply $reply,
-        public ?User $actor
+        public ?User $actor = null,
     ) {
     }
 }

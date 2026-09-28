@@ -14,7 +14,7 @@ class TicketDecided
         public SupportTicket $ticket,
         public ?User $actor,
         public ?string $oldDecision,
-        public ?string $newDecision
+        public ?string $newDecision,
     ) {
     }
 }

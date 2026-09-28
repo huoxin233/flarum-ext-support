@@ -28,6 +28,20 @@ class TicketDomainEventsTest extends TestCase
     /** @var list<object> */
     public static array $dispatchedEvents = [];
 
+    /**
+     * Flarum's notification mailer and auth pipeline repeatedly look up users by ID.
+     * Upstream whitelists this shape in StatusNotificationTest and CategoryDefaultAssigneeTest.
+     *
+     * @return string[]
+     */
+    protected function allowedRepeatedQueries(): array
+    {
+        return [
+            '`id` = ? limit ?',
+            '"id" = ? limit ?',
+        ];
+    }
+
     public function setUp(): void
     {
         parent::setUp();
@@ -246,6 +260,14 @@ class TicketDomainEventsTest extends TestCase
             'updated_at' => Carbon::now(),
         ]);
 
+        $this->database()->table('linkrobins_support_replies')->insert([
+            'ticket_id' => $ticketId,
+            'user_id' => 2,
+            'content' => 'Opening message',
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
         self::$dispatchedEvents = [];
 
         $response = $this->send(
@@ -296,6 +318,14 @@ class TicketDomainEventsTest extends TestCase
             'assigned_staff_id' => 3,
             'subject' => 'Awaiting user response',
             'status' => SupportTicket::STATUS_AWAITING_USER,
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
+        $this->database()->table('linkrobins_support_replies')->insert([
+            'ticket_id' => $ticketId,
+            'user_id' => 2,
+            'content' => 'Opening message',
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
         ]);
