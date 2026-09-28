@@ -10,9 +10,14 @@ use Flarum\Api\Schema;
 use Flarum\Api\Sort\SortColumn;
 use Flarum\Locale\TranslatorInterface;
 use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
 use Flarum\User\User;
 use Illuminate\Database\Eloquent\Builder;
 use LinkRobins\Support\Access\SupportAbilities;
+use LinkRobins\Support\Event\TicketAssigned;
+use LinkRobins\Support\Event\TicketCreated;
+use LinkRobins\Support\Event\TicketDecided;
+use LinkRobins\Support\Event\TicketStatusChanged;
 use LinkRobins\Support\Job\NotifyAssigned;
 use LinkRobins\Support\Job\NotifyStatusChanged;
 use LinkRobins\Support\RateLimiter;
@@ -26,12 +31,12 @@ use Tobyz\JsonApiServer\Exception\ForbiddenException;
 class SupportTicketResource extends AbstractDatabaseResource
 {
     /**
-     * Status and assignment as they were when this request's update began,
+     * Status, decision, and assignment as they were when this request's update began,
      * keyed by ticket id. Captured in updating() because Eloquent re-syncs
      * originals during save(), so by the time saved() runs the previous values
-     * are gone -- and the notification wording depends on knowing them.
+     * are gone -- and the notification wording and events depend on knowing them.
      *
-     * @var array<int, array{status: ?string, assignee: ?int}>
+     * @var array<int, array{status: ?string, decision: ?string, assignee: ?int}>
      */
     protected array $before = [];
 
@@ -39,6 +44,7 @@ class SupportTicketResource extends AbstractDatabaseResource
         protected RateLimiter $rateLimiter,
         protected TranslatorInterface $translator,
         protected Dispatcher $bus,
+        protected EventDispatcher $events,
     ) {
     }
 
@@ -500,7 +506,11 @@ class SupportTicketResource extends AbstractDatabaseResource
         $actor = $context->getActor();
 
         if ($actor->isGuest() || empty($model->category_id)) {
-            return parent::create($model, $context);
+            $ticket = parent::create($model, $context);
+            if (! $actor->isGuest()) {
+                $this->events->dispatch(new TicketCreated($ticket, $actor));
+            }
+            return $ticket;
         }
 
         return SupportTicket::query()->getConnection()->transaction(function () use ($model, $context, $actor) {
@@ -527,6 +537,8 @@ class SupportTicketResource extends AbstractDatabaseResource
             // fix. Creating it here, in the same transaction, means a failed
             // body rolls the whole thing back -- no body-less tickets.
             $this->createFirstReply($ticket, $context);
+
+            $this->events->dispatch(new TicketCreated($ticket, $actor));
 
             return $ticket;
         });
@@ -588,6 +600,7 @@ class SupportTicketResource extends AbstractDatabaseResource
 
         $this->before[(int) $model->id] = [
             'status' => $model->getOriginal('status'),
+            'decision' => $model->getOriginal('decision'),
             'assignee' => $model->getOriginal('assigned_staff_id') === null
                 ? null
                 : (int) $model->getOriginal('assigned_staff_id'),
@@ -626,6 +639,21 @@ class SupportTicketResource extends AbstractDatabaseResource
                 $before['status'],
                 $actorId,
             ));
+            $this->events->dispatch(new TicketStatusChanged(
+                $model,
+                $actor->isGuest() ? null : $actor,
+                $before['status'],
+                (string) $changes['status'],
+            ));
+        }
+
+        if (array_key_exists('decision', $changes) && $changes['decision'] !== $before['decision']) {
+            $this->events->dispatch(new TicketDecided(
+                $model,
+                $actor->isGuest() ? null : $actor,
+                $before['decision'],
+                $changes['decision'],
+            ));
         }
 
         $assignee = array_key_exists('assigned_staff_id', $changes)
@@ -637,6 +665,12 @@ class SupportTicketResource extends AbstractDatabaseResource
         // handover.
         if ($assignee !== null && $assignee !== $before['assignee']) {
             $this->bus->dispatch(new NotifyAssigned((int) $model->id, $actorId));
+            $this->events->dispatch(new TicketAssigned(
+                $model,
+                $actor->isGuest() ? null : $actor,
+                $model->assignedStaff,
+                $before['assignee'] ? User::find($before['assignee']) : null,
+            ));
         }
 
         return $model;
