@@ -207,5 +207,47 @@ class TicketDomainEventsTest extends TestCase
         $this->assertNull($unassignedEvents[0]->assignee);
         $this->assertEquals(3, $unassignedEvents[0]->oldAssignee?->id);
     }
+
+    #[Test]
+    public function posting_a_reply_dispatches_reply_created_event(): void
+    {
+        $ticketId = $this->database()->table('linkrobins_support_tickets')->insertGetId([
+            'category_id' => 1,
+            'user_id' => 2,
+            'subject' => 'Ticket for reply',
+            'status' => SupportTicket::STATUS_OPEN,
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
+        self::$dispatchedEvents = [];
+
+        $response = $this->send(
+            $this->request('POST', '/api/linkrobins-support-replies', [
+                'authenticatedAs' => 3,
+                'json' => [
+                    'data' => [
+                        'type' => 'linkrobins-support-replies',
+                        'attributes' => [
+                            'content' => 'Staff response message',
+                        ],
+                        'relationships' => [
+                            'ticket' => [
+                                'data' => ['type' => 'linkrobins-support-tickets', 'id' => (string) $ticketId],
+                            ],
+                        ],
+                    ],
+                ],
+            ])
+        );
+
+        $this->assertEquals(201, $response->getStatusCode());
+
+        $replyEvents = array_values(array_filter(self::$dispatchedEvents, fn ($e) => $e instanceof ReplyCreated));
+        $this->assertCount(1, $replyEvents);
+        $this->assertEquals('Staff response message', $replyEvents[0]->reply->content);
+        $this->assertEquals(3, $replyEvents[0]->actor?->id);
+    }
 }
+
 

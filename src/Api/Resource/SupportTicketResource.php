@@ -675,8 +675,8 @@ class SupportTicketResource extends AbstractDatabaseResource
             $this->events->dispatch(new TicketAssigned(
                 $model,
                 $actor->isGuest() ? null : $actor,
-                $newAssigneeId ? User::find($newAssigneeId) : null,
-                $oldAssigneeId ? User::find($oldAssigneeId) : null,
+                $newAssigneeId ? User::query()->find($newAssigneeId) : null,
+                $oldAssigneeId ? User::query()->find($oldAssigneeId) : null,
             ));
         }
 
