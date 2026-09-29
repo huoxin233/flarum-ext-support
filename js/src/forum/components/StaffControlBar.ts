@@ -23,11 +23,7 @@ export default class StaffControlBar extends Component {
     if (ticket.status() === 'closed') {
       // A closed ticket hides the status dropdown, so offer an explicit Reopen
       // button -- otherwise an accidental close is unrecoverable from the UI.
-      items.add(
-        'closedBadge',
-        m('span', { className: 'LinkRobinsSupport-staffBar-label' }, tr('show.closed_badge', 'Closed ticket')),
-        100
-      );
+      items.add('closedBadge', m('span', { className: 'LinkRobinsSupport-staffBar-label' }, tr('show.closed_badge', 'Closed ticket')), 100);
 
       items.add(
         'reopen',
