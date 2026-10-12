@@ -6,6 +6,7 @@ import ItemList from 'flarum/common/utils/ItemList';
 import { tr, trText } from '../utils/translate';
 import { statusChip, statusClass, statusLabel, decisionLabel, priorityChip } from '../utils/status';
 import AssignTicketModal from './AssignTicketModal';
+import { ticketTypes } from '../../common/ticketTypes';
 
 const STATUSES = ['open', 'in_progress', 'awaiting_user', 'resolved', 'closed'];
 const DECISIONS = ['pending', 'accepted', 'rejected'];
@@ -35,7 +36,7 @@ export default class TicketHeader extends Component {
         ? m('div', { className: 'LinkRobinsSupport-decision' }, [
             tr('show.decision', 'Decision:'),
             ' ',
-            isStaff && !isDeleted
+            isStaff && !isDeleted && this.decisionItems(ticket).toArray().length
               ? this.decisionControl(ticket)
               : m('span', { className: 'LinkRobinsSupport-decision-' + ticket.decision() }, decisionLabel(ticket.decision())),
           ])
@@ -80,6 +81,11 @@ export default class TicketHeader extends Component {
         ]),
         70
       );
+
+      const driver = ticketTypes.forCategory(category);
+      if (driver && driver.metaItems) {
+        driver.metaItems(items, ticket);
+      }
     }
 
     if (isStaff) items.add('assignee', this.assignee(ticket), 60);
@@ -120,8 +126,8 @@ export default class TicketHeader extends Component {
   }
 
   decisionControl(ticket: any) {
-    const { onSetDecision, updating } = this.attrs as any;
     const current = ticket.decision();
+    const items = this.decisionItems(ticket);
 
     return m(
       Dropdown,
@@ -130,9 +136,27 @@ export default class TicketHeader extends Component {
         buttonClassName: 'Button Button--text LinkRobinsSupport-decisionToggle LinkRobinsSupport-decision-' + current,
         label: decisionLabel(current),
         caretIcon: 'fas fa-caret-down',
-        accessibleToggleLabel: trText('staff.change_decision', 'Change appeal decision'),
+        accessibleToggleLabel: trText('staff.change_decision', 'Change decision'),
       },
-      DECISIONS.map((d) =>
+      items.toArray()
+    );
+  }
+
+  decisionItems(ticket: any) {
+    const { onSetDecision, updating } = this.attrs as any;
+    const current = ticket.decision();
+    const items = new ItemList();
+
+    // Offer only what the server accepts for this category's ticket type,
+    // or a pick would be silently dropped. Older payloads without the
+    // attribute fall back to the built-in list.
+    const category = ticket && ticket.category && ticket.category();
+    const allowed = category && category.allowedDecisions ? category.allowedDecisions() : null;
+    const decisions: string[] = Array.isArray(allowed) ? allowed : DECISIONS;
+
+    decisions.forEach((d) => {
+      items.add(
+        d,
         m(
           Button,
           {
@@ -142,8 +166,17 @@ export default class TicketHeader extends Component {
           },
           decisionLabel(d)
         )
-      )
-    );
+      );
+    });
+
+    if (category) {
+      const driver = ticketTypes.forCategory(category);
+      if (driver && driver.decisionItems) {
+        driver.decisionItems(items, ticket);
+      }
+    }
+
+    return items;
   }
 
   assignee(ticket: any) {
@@ -273,6 +306,14 @@ export default class TicketHeader extends Component {
           ),
           -100
         );
+      }
+    }
+
+    const category = ticket && ticket.category && ticket.category();
+    if (category) {
+      const driver = ticketTypes.forCategory(category);
+      if (driver && driver.actionItems) {
+        driver.actionItems(items, ticket);
       }
     }
 

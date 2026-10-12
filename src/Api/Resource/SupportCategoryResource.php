@@ -13,6 +13,9 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
 use LinkRobins\Support\Access\SupportAbilities;
 use LinkRobins\Support\SupportCategory;
+use LinkRobins\Support\TicketType\AppealTicketType;
+use LinkRobins\Support\TicketType\StandardTicketType;
+use LinkRobins\Support\TicketType\TicketTypeManager;
 use Tobyz\JsonApiServer\Context;
 use Tobyz\JsonApiServer\Exception\BadRequestException;
 
@@ -20,6 +23,7 @@ class SupportCategoryResource extends AbstractDatabaseResource
 {
     public function __construct(
         protected TranslatorInterface $translator,
+        protected TicketTypeManager $ticketTypes,
     ) {
     }
 
@@ -140,9 +144,63 @@ class SupportCategoryResource extends AbstractDatabaseResource
             Schema\Integer::make('position')
                 ->writable(),
 
+            // Kept writable for API clients written before ticket types:
+            // true maps to the appeal type, false turns an appeal-like
+            // category back into a standard one. It is declared before
+            // ticketType so an explicit ticketType in the same request wins.
             Schema\Boolean::make('isAppeal')
-                ->property('is_appeal')
-                ->writable(),
+                ->get(function (SupportCategory $cat) {
+                    return $cat->ticketType()->isAppeal();
+                })
+                ->writable()
+                ->set(function (SupportCategory $cat, $value) {
+                    if ($value) {
+                        $cat->ticket_type = AppealTicketType::ID;
+                    } elseif ($cat->ticketType()->isAppeal()) {
+                        $cat->ticket_type = StandardTicketType::ID;
+                    }
+                }),
+
+            Schema\Str::make('ticketType')
+                ->get(function (SupportCategory $cat) {
+                    return $cat->ticket_type ?: StandardTicketType::ID;
+                })
+                ->writable()
+                ->set(function (SupportCategory $cat, $value) {
+                    $id = is_string($value) ? trim($value) : '';
+                    if ($id === '') {
+                        $id = StandardTicketType::ID;
+                    }
+                    // Only registered types: an unknown id would be stored
+                    // and then silently behave as standard.
+                    if (! $this->ticketTypes->has($id)) {
+                        throw new BadRequestException($this->translator->trans('linkrobins-support.api.unknown_ticket_type'));
+                    }
+                    $cat->ticket_type = $id;
+                }),
+
+            // The decisions staff may set on tickets in this category, so the
+            // ticket page offers exactly what the server will accept.
+            Schema\Arr::make('allowedDecisions')
+                ->get(fn (SupportCategory $cat) => array_values($cat->ticketType()->allowedDecisions())),
+
+            Schema\Arr::make('allowedGroupIds')
+                ->property('allowed_group_ids')
+                ->writable()
+                ->nullable()
+                ->set(function (SupportCategory $cat, $value) {
+                    if (is_array($value)) {
+                        $ids = array_values(array_filter(array_map('intval', $value), fn ($id) => $id > 0));
+                        $cat->allowed_group_ids = empty($ids) ? null : $ids;
+                    } else {
+                        $cat->allowed_group_ids = null;
+                    }
+                }),
+
+            Schema\Boolean::make('canCreate')
+                ->get(function (SupportCategory $cat, FlarumContext $context) {
+                    return $cat->canCreate($context->getActor());
+                }),
 
             Schema\Integer::make('ticketCount')
                 ->get(fn (SupportCategory $cat) => (int) ($cat->tickets_count ?? $cat->tickets()->count())),

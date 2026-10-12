@@ -10,8 +10,8 @@ forum-wide moderation actions (suspensions, bans) honest.
   ticket is visible only to that user and to staff. Other users never
   see it, even if they know the URL.
 - **Categories.** Admin-configurable, each with name, slug, color, icon,
-  position, and an `is_appeal` flag.
-- **Appeal flow.** Categories marked as appeals follow stricter rate
+  position, and a `ticket_type` driver (e.g. `standard`, `appeal`, or custom extensions).
+- **Appeal flow.** Categories using the appeal driver follow stricter rate
   limits and are filable by suspended users so they can plead their
   case. General categories are blocked for suspended users so a ban
   isn't trivially worked around.
@@ -183,7 +183,8 @@ Staff additionally see:
 Seven tables:
 
 - `linkrobins_support_categories` -- name, slug, description, color,
-  icon, position, is_appeal.
+  icon, position, ticket_type, default_assignee_id,
+  allowed_group_ids.
 - `linkrobins_support_tickets` -- category_id, user_id,
   assigned_staff_id, subject, status, decision, priority,
   last_reply_at, status_changed_at, reminded_at, deleted_at.
@@ -207,6 +208,13 @@ trait. The rendered HTML is computed at serialize time via
 `formatContent()`, NOT cached in a `content_html` column -- this means
 formatter extensions like mentions and emoji apply to older replies the
 moment they're installed.
+
+## Category Access Control
+
+Admins can configure **Allowed User Groups** on individual categories in the Admin Panel:
+- **No groups selected (default/empty)**: Open to all registered users eligible under the category's ticket type driver (e.g. Standard allows active users; Ban Appeal allows suspended users who are not appeal-banned).
+- **Specific groups selected**: Only users belonging to at least one of the selected groups (or Administrators) can create tickets in the category. Categories the actor is not eligible for are automatically filtered out of the ticket creation picker.
+- **Full backward compatibility**: All existing categories default to unrestricted. Users who already have appeal tickets can continue viewing, tracking, and replying to their tickets without disruption.
 
 ## File attachments (fof/upload integration)
 
@@ -297,8 +305,9 @@ Supported filters (use `filter[name]=value` shape; Flarum 2 rejects
 unrecognized top-level params):
 
 - On tickets: `filter[q]=...` (search), `filter[mine]=1`,
-  `filter[status]=open`, `filter[categoryId]=N`, `filter[assigned]=me`
-  or `filter[assigned]=none`
+  `filter[status]=open`, `filter[categoryId]=N`,
+  `filter[ticketType]=standard|appeal|<custom>`,
+  `filter[assigned]=me` or `filter[assigned]=none`
 - On replies: `filter[ticketId]=N`
 - On history: `filter[ticketId]=N`
 
@@ -328,6 +337,169 @@ return [
 ```
 
 The extension also dispatches `TicketChanged` and `ReplyPosted`, broader events that drive live updates; prefer the specific ones above.
+
+## Extending Ticket Types
+
+Other extensions can register custom ticket types to introduce specialized workflows, custom fields, rate limits, and review actions.
+
+### Backend Driver (PHP)
+
+Create a driver extending `LinkRobins\Support\TicketType\AbstractTicketType`:
+
+```php
+namespace Vendor\Example\TicketType;
+
+use Flarum\User\User;
+use LinkRobins\Support\RateLimiter;
+use LinkRobins\Support\SupportCategory;
+use LinkRobins\Support\SupportTicket;
+use LinkRobins\Support\TicketType\AbstractTicketType;
+
+class VerificationTicketType extends AbstractTicketType
+{
+    public const ID = 'verification';
+
+    public function id(): string
+    {
+        return self::ID;
+    }
+
+    public function name(): string
+    {
+        return 'Identity Verification';
+    }
+
+    public function isAppeal(): bool
+    {
+        return false;
+    }
+
+    public function canCreate(User $actor, SupportCategory $category): bool
+    {
+        // Custom eligibility check (e.g. require email confirmation or user group)
+        return $actor->is_email_confirmed;
+    }
+
+    public function checkRateLimit(User $actor, SupportCategory $category, RateLimiter $limiter): ?array
+    {
+        // Optional custom rate limiting (return null to use default general quotas)
+        return null;
+    }
+
+    public function initialDecision(SupportTicket $ticket): ?string
+    {
+        return 'pending';
+    }
+
+    public function allowedDecisions(): array
+    {
+        return ['pending', 'accepted', 'rejected'];
+    }
+
+    public function canReopen(SupportTicket $ticket, User $actor): bool
+    {
+        return false;
+    }
+
+    public function onCreating(SupportTicket $ticket, array $data, User $actor): void
+    {
+        // Server-side validation or custom attribute mutation before saving
+        if (empty($data['attributes']['verificationCode'])) {
+            throw new \Tobyz\JsonApiServer\Exception\BadRequestException('Verification code is required.');
+        }
+    }
+
+    public function onCreated(SupportTicket $ticket, array $data, User $actor): void
+    {
+        // Trigger post-creation integrations or external sync jobs
+    }
+
+    public function onDecided(SupportTicket $ticket, string $newDecision, ?string $oldDecision, ?User $actor): void
+    {
+        // Automated workflows upon approval/rejection (e.g. assign group or update external API)
+        if ($newDecision === 'accepted') {
+            $ticket->user->groups()->syncWithoutDetaching([/* verified group ID */]);
+        }
+    }
+
+    public function onStatusChanged(SupportTicket $ticket, string $newStatus, ?string $oldStatus, ?User $actor): void
+    {
+        // Status transition workflows (e.g. sync with Jira, CRM, or external webhook)
+    }
+}
+```
+
+Register your driver in `extend.php`:
+
+```php
+use LinkRobins\Support\Extend\TicketType;
+use Vendor\Example\TicketType\VerificationTicketType;
+
+return [
+    (new TicketType())
+        ->add(VerificationTicketType::ID, VerificationTicketType::class),
+];
+```
+
+### Frontend Driver (TypeScript / Mithril)
+
+Register a client-side driver in your forum and admin initializers:
+
+```typescript
+app.initializers.add('vendor-example-support', () => {
+  if (app.support?.ticketTypes) {
+    app.support.ticketTypes.register({
+      id: 'verification',
+
+      // Add custom fields to the composer
+      fields(items, context) {
+        items.add('id-code', m('input.FormControl', {
+          placeholder: 'Verification Code',
+          oninput: (e: any) => { context.verificationCode = e.target.value; },
+        }));
+      },
+
+      // Client-side pre-submit validation (return an error message string to halt submission)
+      validate(data, context) {
+        if (!context.verificationCode) {
+          return 'Please provide a verification code before submitting.';
+        }
+      },
+
+      // Append custom fields to the ticket creation payload
+      submitData(data, context) {
+        data.verificationCode = context.verificationCode;
+      },
+
+      // Add custom panels or cards above the ticket replies
+      contentItems(items, ticket) {
+        items.add('id-badge', m('div.VerificationBadge', 'ID Verification Pending'));
+      },
+
+      // Display custom badges or chips in the ticket list/queue row
+      badgeItems(items, ticket) {
+        items.add('id-chip', m('span.LinkRobinsSupport-chip', 'Verified ID'));
+      },
+
+      // Add custom category settings to the admin CategoryEditorModal
+      categoryFields(items, modal) {
+        items.add('target-group', m('.Form-group', [
+          m('label', 'Target User Group'),
+          m('input.FormControl', {
+            value: modal.targetGroup,
+            oninput: (e: any) => { modal.targetGroup = e.target.value; },
+          }),
+        ]));
+      },
+
+      // Append custom category settings to the save payload
+      categorySubmitData(data, modal) {
+        data.targetGroup = modal.targetGroup;
+      },
+    });
+  }
+});
+```
 
 ## License
 

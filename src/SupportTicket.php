@@ -51,6 +51,12 @@ class SupportTicket extends AbstractModel
     public ?int $eventActorId = null;
 
     /**
+     * The User model instance of who is making the change, if available.
+     * Reused during model event hooks to avoid querying the users table.
+     */
+    public ?User $eventActor = null;
+
+    /**
      * Set when the forum, not a person, is moving the status: a reply's
      * status rules or the auto-close command. Not a column. The timeline
      * words those changes as automatic.
@@ -149,6 +155,25 @@ class SupportTicket extends AbstractModel
         return $this->belongsTo(SupportCategory::class, 'category_id');
     }
 
+    /**
+     * The category the ticket is in right now. A loaded `category` relation
+     * goes stale when staff move the ticket (category_id changes, the
+     * relation does not), and the ticket type behind it decides decisions,
+     * reopening and lifecycle hooks, so re-resolve it whenever the ids differ.
+     */
+    public function currentCategory(): ?SupportCategory
+    {
+        if (! $this->category_id) {
+            return null;
+        }
+
+        if (! $this->relationLoaded('category') || ! $this->category || (int) $this->category->id !== (int) $this->category_id) {
+            $this->unsetRelation('category');
+        }
+
+        return $this->category;
+    }
+
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
@@ -207,7 +232,9 @@ class SupportTicket extends AbstractModel
 
     public function isAppeal(): bool
     {
-        return $this->category && $this->category->is_appeal;
+        $category = $this->currentCategory();
+
+        return $category && $category->ticketType()->isAppeal();
     }
 
     public function isOpen(): bool

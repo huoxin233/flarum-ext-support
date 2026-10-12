@@ -3,10 +3,14 @@
 namespace LinkRobins\Support;
 
 use Flarum\Database\AbstractModel;
+use Flarum\Group\Group;
 use Flarum\User\User;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use LinkRobins\Support\Access\SupportAbilities;
+use LinkRobins\Support\TicketType\StandardTicketType;
+use LinkRobins\Support\TicketType\TicketTypeInterface;
+use LinkRobins\Support\TicketType\TicketTypeManager;
 
 /**
  * @property int $id
@@ -16,8 +20,9 @@ use LinkRobins\Support\Access\SupportAbilities;
  * @property string|null $color
  * @property string|null $icon
  * @property int $position
- * @property bool $is_appeal
+ * @property string|null $ticket_type
  * @property int|null $default_assignee_id
+ * @property array<int>|null $allowed_group_ids
  * @property \Carbon\Carbon|null $created_at
  * @property \Carbon\Carbon|null $updated_at
  * @property-read User|null $defaultAssignee
@@ -36,14 +41,38 @@ class SupportCategory extends AbstractModel
         'color',
         'icon',
         'position',
-        'is_appeal',
+        'ticket_type',
         'default_assignee_id',
+        'allowed_group_ids',
     ];
 
     protected $casts = [
         'position'  => 'integer',
-        'is_appeal' => 'boolean',
+        'allowed_group_ids' => 'array',
     ];
+
+    /**
+     * Resolve the ticket type driver for this category.
+     * Defaults to Standard if not specified.
+     */
+    public function ticketType(): TicketTypeInterface
+    {
+        /** @var TicketTypeManager $manager */
+        $manager = resolve(TicketTypeManager::class);
+
+        // An unregistered id (say its extension was disabled) falls back to
+        // standard inside the manager. A driver that fails to build is a bug
+        // and must surface, not quietly turn appeals into standard tickets.
+        return $manager->get($this->ticket_type ?: StandardTicketType::ID);
+    }
+
+    /**
+     * Check if this category's ticket type driver represents an appeal.
+     */
+    public function isAppeal(): bool
+    {
+        return $this->ticketType()->isAppeal();
+    }
 
     public function tickets(): HasMany
     {
@@ -54,6 +83,8 @@ class SupportCategory extends AbstractModel
      * The staff member new tickets in this category are handed to. Null means
      * no auto-assign: tickets arrive unassigned and every staff member is
      * notified about them.
+     *
+     * @return BelongsTo<User, $this>
      */
     public function defaultAssignee(): BelongsTo
     {
@@ -79,6 +110,37 @@ class SupportCategory extends AbstractModel
 
         $user = $this->defaultAssignee;
 
-        return $user && SupportAbilities::isStaff($user) ? $user : null;
+        return ($user instanceof User && SupportAbilities::isStaff($user)) ? $user : null;
+    }
+
+    /**
+     * Determine if a user may create a ticket in this category.
+     * Combines the ticket type driver's eligibility check with
+     * any admin-configured allowed user groups.
+     */
+    public function canCreate(User $actor): bool
+    {
+        if ($actor->isGuest()) {
+            return false;
+        }
+
+        if (! $this->ticketType()->canCreate($actor, $this)) {
+            return false;
+        }
+
+        if (! empty($this->allowed_group_ids)) {
+            if ($actor->isAdmin()) {
+                return true;
+            }
+
+            $userGroupIds = array_map('intval', $actor->groups->pluck('id')->all());
+            $userGroupIds[] = Group::MEMBER_ID;
+            $allowedInts = array_map('intval', $this->allowed_group_ids);
+            if (empty(array_intersect($userGroupIds, $allowedInts))) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

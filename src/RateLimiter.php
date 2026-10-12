@@ -6,6 +6,8 @@ use Carbon\Carbon;
 use Flarum\Locale\TranslatorInterface;
 use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\User\User;
+use LinkRobins\Support\TicketType\AppealTicketType;
+use LinkRobins\Support\TicketType\TicketTypeManager;
 
 /**
  * Centralizes ticket-creation rate limits so the rules live in one place
@@ -43,7 +45,12 @@ class RateLimiter
      */
     public function check(User $actor, SupportCategory $category): array
     {
-        if ($category->is_appeal) {
+        $custom = $category->ticketType()->checkRateLimit($actor, $category, $this);
+        if ($custom !== null) {
+            return $custom;
+        }
+
+        if ($category->ticketType()->isAppeal()) {
             return $this->checkAppeal($actor, $category);
         }
         return $this->checkGeneral($actor, $category);
@@ -52,7 +59,7 @@ class RateLimiter
     protected function checkAppeal(User $actor, SupportCategory $category): array
     {
         // Permanent appeal-ban: hard stop, no window.
-        if ((bool) $actor->getAttribute('support_appeal_banned')) {
+        if (UserState::isAppealBanned($actor)) {
             return $this->fail(self::REASON_APPEAL_BANNED, []);
         }
 
@@ -111,14 +118,18 @@ class RateLimiter
         return $this->ok();
     }
 
-    protected function ok(): array
+    public function ok(): array
     {
         return ['ok' => true, 'reason' => self::REASON_OK, 'meta' => []];
     }
 
-    protected function fail(string $reason, array $meta): array
+    public function fail(string $reason, array $meta = [], ?string $message = null): array
     {
-        return ['ok' => false, 'reason' => $reason, 'meta' => $meta];
+        $payload = ['ok' => false, 'reason' => $reason, 'meta' => $meta];
+        if ($message !== null) {
+            $payload['message'] = $message;
+        }
+        return $payload;
     }
 
     /**
@@ -130,6 +141,9 @@ class RateLimiter
     {
         if (! empty($result['ok'])) {
             return '';
+        }
+        if (! empty($result['message']) && is_string($result['message'])) {
+            return $result['message'];
         }
         $meta = $result['meta'] ?? [];
         switch ($result['reason'] ?? '') {
@@ -166,12 +180,25 @@ class RateLimiter
     // so that soft-deleting a ticket can't refund the user's quota: otherwise
     // "file → get it soft-deleted → refile" would defeat the volume throttle.
 
+    /**
+     * @return list<string>
+     */
+    protected function appealTicketTypeIds(): array
+    {
+        /** @var TicketTypeManager $manager */
+        $manager = resolve(TicketTypeManager::class);
+
+        return $manager->appealIds() ?: [AppealTicketType::ID];
+    }
+
     protected function countOpenAppealsForUser(User $actor): int
     {
+        $appealTypes = $this->appealTicketTypeIds();
+
         return SupportTicket::query()
             ->where('user_id', $actor->id)
-            ->whereHas('category', function ($q) {
-                $q->where('is_appeal', true);
+            ->whereHas('category', function ($q) use ($appealTypes) {
+                $q->whereIn('ticket_type', $appealTypes);
             })
             ->whereIn('status', [
                 SupportTicket::STATUS_OPEN,
@@ -183,11 +210,13 @@ class RateLimiter
 
     protected function countAppealsForUserSince(User $actor, Carbon $since): int
     {
+        $appealTypes = $this->appealTicketTypeIds();
+
         return SupportTicket::query()
             ->withTrashed()
             ->where('user_id', $actor->id)
-            ->whereHas('category', function ($q) {
-                $q->where('is_appeal', true);
+            ->whereHas('category', function ($q) use ($appealTypes) {
+                $q->whereIn('ticket_type', $appealTypes);
             })
             ->where('created_at', '>=', $since)
             ->count();
@@ -195,11 +224,13 @@ class RateLimiter
 
     protected function countGeneralTicketsForUserSince(User $actor, Carbon $since): int
     {
+        $appealTypes = $this->appealTicketTypeIds();
+
         return SupportTicket::query()
             ->withTrashed()
             ->where('user_id', $actor->id)
-            ->whereHas('category', function ($q) {
-                $q->where('is_appeal', false);
+            ->whereHas('category', function ($q) use ($appealTypes) {
+                $q->whereNotIn('ticket_type', $appealTypes);
             })
             ->where('created_at', '>=', $since)
             ->count();

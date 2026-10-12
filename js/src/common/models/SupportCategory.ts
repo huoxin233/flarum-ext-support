@@ -13,7 +13,15 @@ export default class SupportCategory extends Model {
   icon = Model.attribute<string | null>('icon');
   position = Model.attribute<number>('position');
   isAppeal = Model.attribute<boolean>('isAppeal');
+  ticketType = Model.attribute<string | null>('ticketType');
+  allowedGroupIds = Model.attribute<number[] | null>('allowedGroupIds');
+  canCreate = Model.attribute<boolean>('canCreate');
+  allowedDecisions = Model.attribute<string[] | null>('allowedDecisions');
   ticketCount = Model.attribute<number>('ticketCount');
+
+  getTicketTypeId(): string {
+    return this.ticketType() || 'standard';
+  }
 
   // The staff member new tickets here are assigned to, and the only person
   // notified about them. Null means no auto-assign: all staff are notified.

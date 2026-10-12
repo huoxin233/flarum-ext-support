@@ -210,7 +210,10 @@ class SupportTicketResource extends AbstractDatabaseResource
                 ->writableOnUpdate()
                 ->nullable()
                 ->set(function (SupportTicket $ticket, $value, FlarumContext $context) {
-                    if ($value !== null && ! in_array($value, SupportTicket::ALL_DECISIONS, true)) {
+                    // Which decisions the ticket type accepts is checked in
+                    // updating(), once a category move in the same request
+                    // has been applied.
+                    if ($value !== null && ! is_string($value)) {
                         return;
                     }
                     $actor = $context->getActor();
@@ -417,6 +420,9 @@ class SupportTicketResource extends AbstractDatabaseResource
                     } elseif (is_numeric($value)) {
                         $ticket->category_id = (int) $value;
                     }
+                    if ($ticket->isDirty('category_id')) {
+                        $ticket->unsetRelation('category');
+                    }
                 }),
         ];
     }
@@ -439,9 +445,9 @@ class SupportTicketResource extends AbstractDatabaseResource
         if ($ticket->status !== SupportTicket::STATUS_RESOLVED) {
             return false;
         }
-        $category = $ticket->category;
+        $category = $ticket->currentCategory();
 
-        return ! ($category && $category->is_appeal);
+        return $category ? $category->ticketType()->canConfirmSolved($ticket, $actor) : true;
     }
 
     protected function ownerMayReopen(SupportTicket $ticket, User $actor): bool
@@ -452,9 +458,9 @@ class SupportTicketResource extends AbstractDatabaseResource
         if ($ticket->status !== SupportTicket::STATUS_CLOSED) {
             return false;
         }
-        $category = $ticket->category;
+        $category = $ticket->currentCategory();
 
-        return ! ($category && $category->is_appeal);
+        return $category ? $category->ticketType()->canReopen($ticket, $actor) : true;
     }
 
     public function creating(object $model, Context $context): ?object
@@ -468,6 +474,7 @@ class SupportTicketResource extends AbstractDatabaseResource
         // user, regardless of what JSON it sends.
         if (! $actor->isGuest()) {
             $model->user_id = $actor->id;
+            $model->setRelation('user', $actor);
         }
 
         // Resolve the requested category. JSON:API gives it to us via the
@@ -477,9 +484,10 @@ class SupportTicketResource extends AbstractDatabaseResource
         $categoryRel = data_get($body, 'data.relationships.category.data.id');
         $category = null;
         if (is_numeric($categoryRel)) {
-            $category = SupportCategory::query()->find((int) $categoryRel);
+            $category = SupportCategory::query()->with('defaultAssignee.groups')->find((int) $categoryRel);
             if ($category) {
                 $model->category_id = $category->id;
+                $model->setRelation('category', $category);
             }
         }
         if (! $category) {
@@ -493,16 +501,10 @@ class SupportTicketResource extends AbstractDatabaseResource
             throw new ForbiddenException($this->rateLimiter->describe($rate));
         }
 
-        // Ban-state vs. category. A suspended user can create *appeal*
-        // tickets but not general ones. Without this check, a suspended
-        // user could bypass their ban by filing a general support
-        // ticket and using it as a chat channel.
-        // Note: Flarum has no built-in isBanned() method. We treat a
-        // currently-suspended user (from flarum/suspend) as banned for
-        // support purposes -- via UserState::isSuspended().
-        if (UserState::isSuspended($actor) && ! $category->is_appeal) {
+        // Eligibility check via category.
+        if (! $category->canCreate($actor)) {
             throw new ForbiddenException(
-                'Your account is restricted from creating general support tickets. You may file an appeal instead.'
+                $this->translator->trans('linkrobins-support.api.category_not_permitted')
             );
         }
 
@@ -518,18 +520,20 @@ class SupportTicketResource extends AbstractDatabaseResource
         // steer the radius.
         if ($assignee = $category->effectiveDefaultAssignee()) {
             $model->assigned_staff_id = $assignee->id;
+            $model->setRelation('assignedStaff', $assignee);
         }
 
-        // Initial status. For appeal tickets we also set decision=pending so
-        // the staff list shows it explicitly as awaiting decision.
+        // Initial status and decision from the ticket type driver.
         $model->status = SupportTicket::STATUS_OPEN;
-        if ($category->is_appeal) {
-            $model->decision = SupportTicket::DECISION_PENDING;
-        }
+        $model->decision = $category->ticketType()->initialDecision($model);
 
         // last_reply_at starts at created_at so newly-opened tickets sort
         // correctly on the activity-sorted list.
         $model->last_reply_at = Carbon::now();
+
+        $rawBody = (array) $context->request->getParsedBody();
+        $data = (array) ($rawBody['data'] ?? []);
+        $category->ticketType()->onCreating($model, $data, $actor);
 
         return $model;
     }
@@ -559,7 +563,9 @@ class SupportTicketResource extends AbstractDatabaseResource
             // committed count.
             User::query()->whereKey($actor->id)->lockForUpdate()->first();
 
-            $category = SupportCategory::query()->find((int) $model->category_id);
+            $category = $model->relationLoaded('category') && $model->category
+                ? $model->category
+                : SupportCategory::query()->find((int) $model->category_id);
             if ($category) {
                 $rate = $this->rateLimiter->check($actor, $category);
                 if (! $rate['ok']) {
@@ -576,6 +582,12 @@ class SupportTicketResource extends AbstractDatabaseResource
             // fix. Creating it here, in the same transaction, means a failed
             // body rolls the whole thing back -- no body-less tickets.
             $this->createFirstReply($ticket, $context);
+
+            $rawBody = (array) $context->request->getParsedBody();
+            $data = (array) ($rawBody['data'] ?? []);
+            if ($category) {
+                $category->ticketType()->onCreated($ticket, $data, $actor);
+            }
 
             return $ticket;
         });
@@ -635,8 +647,21 @@ class SupportTicketResource extends AbstractDatabaseResource
             $model->subject = $model->getOriginal('subject');
         }
 
+        // A new decision must be one the ticket's type accepts. Checked here
+        // rather than in the setter so a category move in the same request
+        // counts, and rejected out loud so the staff member is not left
+        // looking at a pick that silently never saved.
+        if ($model->isDirty('decision') && $model->decision !== null) {
+            $category = $model->currentCategory();
+            $allowed = $category ? $category->ticketType()->allowedDecisions() : SupportTicket::ALL_DECISIONS;
+            if (! in_array($model->decision, $allowed, true)) {
+                throw new BadRequestException($this->translator->trans('linkrobins-support.api.decision_not_allowed'));
+            }
+        }
+
         // Credit status and assignment changes in the ticket timeline to the
         // person making this request (see SupportEvent::recordChanges).
+        $model->eventActor = $actor->isGuest() ? null : $actor;
         $model->eventActorId = $actor->isGuest() ? null : (int) $actor->id;
 
         $this->before[(int) $model->id] = [

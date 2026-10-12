@@ -21,11 +21,15 @@ use LinkRobins\Support\Search\Filter as Filters;
 use LinkRobins\Support\Search\EventSearcher;
 use LinkRobins\Support\Search\ReplySearcher;
 use LinkRobins\Support\Search\TicketSearcher;
+use LinkRobins\Support\Extend as SupportExtend;
 use LinkRobins\Support\SupportCategory;
 use LinkRobins\Support\SupportEvent;
 use LinkRobins\Support\SupportReply;
 use LinkRobins\Support\SupportServiceProvider;
 use LinkRobins\Support\SupportTicket;
+use LinkRobins\Support\TicketType\AppealTicketType;
+use LinkRobins\Support\TicketType\StandardTicketType;
+use LinkRobins\Support\TicketType\TicketTypeManager;
 
 return [
     (new Extend\Frontend('forum'))
@@ -66,6 +70,10 @@ return [
     (new Extend\ServiceProvider())
         ->register(SupportServiceProvider::class),
 
+    (new SupportExtend\TicketType())
+        ->add(StandardTicketType::ID, StandardTicketType::class)
+        ->add(AppealTicketType::ID, AppealTicketType::class),
+
     (new Extend\SearchDriver(DatabaseSearchDriver::class))
         ->addSearcher(SupportTicket::class, TicketSearcher::class)
         ->setFulltext(TicketSearcher::class, \LinkRobins\Support\Search\TicketFulltextFilter::class)
@@ -73,6 +81,7 @@ return [
         ->addFilter(TicketSearcher::class, Filters\CategoryIdFilter::class)
         ->addFilter(TicketSearcher::class, Filters\MineFilter::class)
         ->addFilter(TicketSearcher::class, Filters\AssignedFilter::class)
+        ->addFilter(TicketSearcher::class, Filters\TicketTypeFilter::class)
         ->addSearcher(SupportReply::class, ReplySearcher::class)
         ->addFilter(ReplySearcher::class, Filters\TicketIdFilter::class)
         ->addSearcher(SupportEvent::class, EventSearcher::class)
@@ -215,6 +224,25 @@ return [
                         return \LinkRobins\Support\UserState::isSuspended($actor);
                     } catch (\Throwable $e) {
                         return false;
+                    }
+                }),
+
+            \Flarum\Api\Schema\Arr::make('supportTicketTypes')
+                ->get(function () {
+                    try {
+                        /** @var TicketTypeManager $manager */
+                        $manager = resolve(TicketTypeManager::class);
+                        $types = [];
+                        foreach ($manager->all() as $id => $driver) {
+                            $types[] = [
+                                'id' => $id,
+                                'name' => $driver->name(),
+                                'isAppeal' => $driver->isAppeal(),
+                            ];
+                        }
+                        return $types;
+                    } catch (\Throwable) {
+                        return [];
                     }
                 }),
         ]),

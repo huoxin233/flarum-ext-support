@@ -3,7 +3,9 @@ import Form from 'flarum/common/components/Form';
 import Button from 'flarum/common/components/Button';
 import ColorPreviewInput from 'flarum/common/components/ColorPreviewInput';
 import Select from 'flarum/common/components/Select';
+import ItemList from 'flarum/common/utils/ItemList';
 import { tx, saveCategory, deleteCategory, loadStaffUsers } from '../utils';
+import { ticketTypes } from '../../common/ticketTypes';
 
 /** See _assigneeOptions(): '' stays '', a user id becomes a non-numeric key. */
 function optionKey(id: string | number | null): string {
@@ -24,7 +26,8 @@ export default class CategoryEditorModal extends FormModal {
   color = '#07adcc';
   icon = 'fas fa-folder';
   position = 0;
-  isAppeal = false;
+  ticketType = 'standard';
+  allowedGroupIds: string[] = [];
   // '' means nobody -- no auto-assign, all staff notified.
   defaultAssigneeId = '';
   staff: any[] = [];
@@ -44,7 +47,9 @@ export default class CategoryEditorModal extends FormModal {
     this.color = (category && category.color()) || '#07adcc';
     this.icon = (category && category.icon()) || 'fas fa-folder';
     this.position = category && category.position() !== undefined ? category.position() : 0;
-    this.isAppeal = !!(category && category.isAppeal());
+    this.ticketType = (category && category.ticketType && category.ticketType()) || 'standard';
+    const allowed = category && category.attribute('allowedGroupIds');
+    this.allowedGroupIds = Array.isArray(allowed) ? allowed.map(String) : [];
     const assignee = category && category.defaultAssignee && category.defaultAssignee();
     this.defaultAssigneeId = assignee ? String(assignee.id()) : '';
     this.saving = false;
@@ -82,7 +87,7 @@ export default class CategoryEditorModal extends FormModal {
     return this.editId ? tx('linkrobins-support.admin.category_editor.title_edit') : tx('linkrobins-support.admin.category_editor.title_new');
   }
 
-  content() {
+  fields(): ItemList<any> {
     const colorField = m(ColorPreviewInput, {
       className: 'FormControl',
       placeholder: '#07adcc',
@@ -96,7 +101,10 @@ export default class CategoryEditorModal extends FormModal {
       },
     });
 
-    const groups = [
+    const items = new ItemList<any>();
+
+    items.add(
+      'name',
       m('div', { className: 'Form-group' }, [
         m('label', null, tx('linkrobins-support.admin.category_editor.field_name')),
         m('input', {
@@ -109,7 +117,11 @@ export default class CategoryEditorModal extends FormModal {
           },
         }),
       ]),
+      100
+    );
 
+    items.add(
+      'slug',
       m('div', { className: 'Form-group' }, [
         m('label', null, tx('linkrobins-support.admin.category_editor.field_slug')),
         m('input', {
@@ -124,7 +136,11 @@ export default class CategoryEditorModal extends FormModal {
         }),
         m('div', { className: 'helpText' }, tx('linkrobins-support.admin.category_editor.field_slug_help')),
       ]),
+      90
+    );
 
+    items.add(
+      'description',
       m('div', { className: 'Form-group' }, [
         m('label', null, tx('linkrobins-support.admin.category_editor.field_description')),
         m('textarea', {
@@ -137,13 +153,21 @@ export default class CategoryEditorModal extends FormModal {
           },
         }),
       ]),
+      80
+    );
 
+    items.add(
+      'color',
       m('div', { className: 'Form-group' }, [
         m('label', null, tx('linkrobins-support.admin.category_editor.field_color')),
         colorField,
         m('div', { className: 'helpText' }, tx('linkrobins-support.admin.category_editor.field_color_help')),
       ]),
+      70
+    );
 
+    items.add(
+      'icon',
       m('div', { className: 'Form-group' }, [
         m('label', null, tx('linkrobins-support.admin.category_editor.field_icon')),
         m('input', {
@@ -158,7 +182,11 @@ export default class CategoryEditorModal extends FormModal {
         }),
         m('div', { className: 'helpText' }, tx('linkrobins-support.admin.category_editor.field_icon_help')),
       ]),
+      60
+    );
 
+    items.add(
+      'position',
       m('div', { className: 'Form-group' }, [
         m('label', null, tx('linkrobins-support.admin.category_editor.field_position')),
         m('input', {
@@ -172,26 +200,28 @@ export default class CategoryEditorModal extends FormModal {
         }),
         m('div', { className: 'helpText' }, tx('linkrobins-support.admin.category_editor.field_position_help')),
       ]),
+      50
+    );
 
+    items.add(
+      'ticketType',
       m('div', { className: 'Form-group' }, [
-        m(
-          'div',
-          null,
-          m('label', { className: 'checkbox' }, [
-            m('input', {
-              type: 'checkbox',
-              checked: this.isAppeal,
-              disabled: this.saving,
-              onchange: (e: any) => {
-                this.isAppeal = !!e.target.checked;
-              },
-            }),
-            ' ' + tx('linkrobins-support.admin.category_editor.field_is_appeal'),
-          ])
-        ),
-        m('div', { className: 'helpText' }, tx('linkrobins-support.admin.category_editor.field_is_appeal_help')),
+        m('label', null, tx('linkrobins-support.admin.category_editor.field_ticket_type')),
+        m(Select, {
+          value: this.ticketType,
+          disabled: this.saving,
+          options: this._ticketTypeOptions(),
+          onchange: (value: string) => {
+            this.ticketType = value;
+          },
+        }),
+        m('div', { className: 'helpText' }, tx('linkrobins-support.admin.category_editor.field_ticket_type_help')),
       ]),
+      40
+    );
 
+    items.add(
+      'defaultAssignee',
       m('div', { className: 'Form-group' }, [
         m('label', null, tx('linkrobins-support.admin.category_editor.field_default_assignee')),
         m(Select, {
@@ -206,7 +236,54 @@ export default class CategoryEditorModal extends FormModal {
           ? m('div', { className: 'helpText' }, tx('linkrobins-support.admin.category_editor.field_default_assignee_error'))
           : m('div', { className: 'helpText' }, tx('linkrobins-support.admin.category_editor.field_default_assignee_help')),
       ]),
+      30
+    );
 
+    items.add(
+      'allowedGroups',
+      m('div', { className: 'Form-group' }, [
+        m('label', null, tx('linkrobins-support.admin.category_editor.field_allowed_groups')),
+        m('div', { className: 'helpText' }, tx('linkrobins-support.admin.category_editor.field_allowed_groups_help')),
+        m(
+          'div',
+          { className: 'LinkRobinsSupport-groupCheckboxes' },
+          ((app.store && app.store.all('groups')) || [])
+            .filter((g: any) => g.id() !== '2') // Exclude Guest group
+            .map((group: any) => {
+              const id = String(group.id());
+              const checked = this.allowedGroupIds.includes(id);
+              return m('label.checkbox', [
+                m('input', {
+                  type: 'checkbox',
+                  checked,
+                  disabled: this.saving,
+                  onchange: (e: any) => {
+                    if (e.target.checked) {
+                      if (!this.allowedGroupIds.includes(id)) {
+                        this.allowedGroupIds.push(id);
+                      }
+                    } else {
+                      this.allowedGroupIds = this.allowedGroupIds.filter((gid) => gid !== id);
+                    }
+                  },
+                }),
+                ' ',
+                group.namePlural() || group.nameSingular() || id,
+              ]);
+            })
+        ),
+      ]),
+      20
+    );
+
+    // Allow active ticket type driver to append custom category settings
+    const driver = ticketTypes.get(this.ticketType);
+    if (driver && driver.categoryFields) {
+      driver.categoryFields(items, this);
+    }
+
+    items.add(
+      'submit',
       m('div', { className: 'Form-group Form-controls' }, [
         m(
           Button,
@@ -234,12 +311,34 @@ export default class CategoryEditorModal extends FormModal {
             )
           : null,
       ]),
-    ];
+      -100
+    );
 
+    return items;
+  }
+
+  content() {
     return m('div', { className: 'Modal-body' }, [
       this.error ? m('div', { className: 'Alert Alert--danger' }, this._errorMessage()) : null,
-      m(Form, null, groups),
+      m(Form, null, this.fields().toArray()),
     ]);
+  }
+
+  _ticketTypeOptions(): Record<string, string> {
+    const opts: Record<string, string> = {};
+    this._allTicketTypes().forEach((t: any) => {
+      opts[t.id] = t.name || t.id;
+    });
+    return opts;
+  }
+
+  _allTicketTypes(): Array<{ id: string; name?: string; isAppeal?: boolean }> {
+    return (
+      (app.forum && app.forum.attribute('supportTicketTypes')) || [
+        { id: 'standard', name: tx('linkrobins-support.admin.ticket_types.standard'), isAppeal: false },
+        { id: 'appeal', name: tx('linkrobins-support.admin.ticket_types.appeal'), isAppeal: true },
+      ]
+    );
   }
 
   /**
@@ -314,10 +413,16 @@ export default class CategoryEditorModal extends FormModal {
       color: this.color,
       icon: this.icon,
       position: this.position,
-      isAppeal: this.isAppeal,
+      ticketType: this.ticketType,
+      allowedGroupIds: this.allowedGroupIds.length ? this.allowedGroupIds.map(Number) : null,
     };
     if (this.slug && this.slug.trim()) {
       attrs.slug = this.slug.trim();
+    }
+
+    const driver = ticketTypes.get(this.ticketType);
+    if (driver && driver.categorySubmitData) {
+      driver.categorySubmitData(attrs, this);
     }
 
     // Clearing is sent as the literal JSON:API payload `{ data: null }`, not

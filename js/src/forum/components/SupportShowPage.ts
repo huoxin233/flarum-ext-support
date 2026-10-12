@@ -1,4 +1,5 @@
 import Page from 'flarum/common/components/Page';
+import ItemList from 'flarum/common/utils/ItemList';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import Button from 'flarum/common/components/Button';
 import PageStructure from 'flarum/forum/components/PageStructure';
@@ -15,6 +16,7 @@ import { loadTicket, loadReplies, loadEvents, markTicketRead, postReply, uploadF
 import { onLive } from '../utils/live';
 import { refreshCounts } from '../utils/counts';
 import { openSupportComposer, supportComposerSupported } from '../utils/composer';
+import { ticketTypes } from '../../common/ticketTypes';
 
 // Orchestrates the ticket detail page: owns loading/error state, the ticket and
 // its (paginated) replies, and all mutation logic. Rendering is delegated to
@@ -220,6 +222,8 @@ export default class SupportShowPage extends Page {
           onForceDelete: () => this._forceDeleteTicket(),
         }),
 
+        this.content(ticket),
+
         m(
           'div',
           { className: 'LinkRobinsSupport-replies' },
@@ -284,6 +288,25 @@ export default class SupportShowPage extends Page {
             ]),
       ])
     );
+  }
+
+  content(ticket: any) {
+    const items = this.contentItems(ticket);
+    if (items.isEmpty()) return null;
+
+    return m('div', { className: 'LinkRobinsSupport-ticket-content' }, items.toArray());
+  }
+
+  contentItems(ticket: any) {
+    const items = new ItemList();
+    const category = ticket && ticket.category && ticket.category();
+    if (category) {
+      const driver = ticketTypes.forCategory(category);
+      if (driver && driver.contentItems) {
+        driver.contentItems(items, ticket);
+      }
+    }
+    return items;
   }
 
   /**
@@ -564,7 +587,7 @@ export default class SupportShowPage extends Page {
       .catch((err: any) => {
         this.updating = false;
         console.error('[linkrobins/support] decision update failed:', err);
-        showError(tr('errors.update_decision', 'Could not update the appeal decision.'));
+        showError(tr('errors.update_decision', 'Could not update the decision.'));
         m.redraw();
       });
   }

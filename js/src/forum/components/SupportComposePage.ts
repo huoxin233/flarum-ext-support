@@ -8,6 +8,7 @@ import { BASE_PATH, showError } from '../utils/helpers';
 import { isUserSuspended, supportAppealBanned } from '../utils/permissions';
 import { loadCategories, createTicket, uploadFilesToBody } from '../utils/api';
 import { supportComposerSupported, supportComposerOpenFor, openSupportComposer, supportComposerPreview } from '../utils/composer';
+import { ticketTypes } from '../../common/ticketTypes';
 
 export default class SupportComposePage extends Page {
   loading = true;
@@ -49,10 +50,8 @@ export default class SupportComposePage extends Page {
     loadCategories()
       .then((cats: any[]) => {
         let list = cats || [];
-        // Banned users only see appeal categories.
-        if (isUserSuspended()) {
-          list = list.filter((c: any) => c.isAppeal() === true);
-        }
+        // Only show categories the current user is eligible to create tickets in
+        list = list.filter((c: any) => !c.canCreate || c.canCreate() !== false);
         this.categories = list;
         // Only auto-select when there's a single category, so the picker (with
         // descriptions) is shown whenever there's a real choice to make.
@@ -280,6 +279,14 @@ export default class SupportComposePage extends Page {
       -100
     );
 
+    const cat = this._chosenCategory();
+    if (cat) {
+      const driver = ticketTypes.forCategory(cat);
+      if (driver && driver.fields) {
+        driver.fields(items, this);
+      }
+    }
+
     return items;
   }
 
@@ -302,10 +309,18 @@ export default class SupportComposePage extends Page {
       m(
         'h1',
         { className: 'LinkRobinsSupport-title' },
-        isUserSuspended() ? tr('compose.title_appeal', 'File an appeal') : tr('compose.title', 'New support ticket')
+        this._isAppealOnly() ? tr('compose.title_appeal', 'File an appeal') : tr('compose.title', 'New support ticket')
       ),
       this._renderChosenCategory(),
     ]);
+  }
+
+  _isAppealOnly(): boolean {
+    const chosen = this._chosenCategory();
+    if (chosen) {
+      return !!(chosen.isAppeal && chosen.isAppeal());
+    }
+    return this.categories.length > 0 && this.categories.every((c: any) => !!(c.isAppeal && c.isAppeal()));
   }
 
   // Open the docked composer to write the ticket. A single native "Submit
@@ -338,7 +353,7 @@ export default class SupportComposePage extends Page {
 
   // Step 1: clickable category cards (icon + name + description).
   _renderPicker() {
-    const appeal = isUserSuspended();
+    const appeal = this._isAppealOnly();
     return m('div', { className: 'LinkRobinsSupport-container' }, [
       m('header', { className: 'LinkRobinsSupport-header LinkRobinsSupport-header--picker' }, [
         m(
@@ -443,6 +458,30 @@ export default class SupportComposePage extends Page {
     return tr('errors.submit_ticket', 'Could not submit the ticket.');
   }
 
+  /**
+   * Builds the payload dictionary sent to createTicket(). Extensions can extend
+   * this method with extend() to attach custom attributes or relationships.
+   */
+  submitData(content?: string): Record<string, any> {
+    const bodyText = typeof content === 'string' ? content : this.body;
+    const category = this._chosenCategory();
+
+    const data: Record<string, any> = {
+      subject: this.subject.trim(),
+      firstPost: bodyText,
+      relationships: { category },
+    };
+
+    if (category) {
+      const driver = ticketTypes.forCategory(category);
+      if (driver && driver.submitData) {
+        driver.submitData(data, this);
+      }
+    }
+
+    return data;
+  }
+
   // Create the ticket. Called from the docked composer with (content, body),
   // or from the fallback page button with no args (it reads this.body).
   _submit(content?: string, body?: any) {
@@ -458,12 +497,25 @@ export default class SupportComposePage extends Page {
       return;
     }
 
+    const data = this.submitData(content);
+
+    if (category) {
+      const driver = ticketTypes.forCategory(category);
+      if (driver && driver.validate) {
+        const error = driver.validate(data, this);
+        if (error) {
+          showError(typeof error === 'string' ? error : tr('compose.validation_failed', 'Validation failed. Please check your input.'));
+          return;
+        }
+      }
+    }
+
     this.saving = true;
     this.error = null;
     if (body) body.loading = true;
     m.redraw();
 
-    createTicket(this.subject.trim(), category, bodyText)
+    createTicket(data)
       .then((ticket: any) => {
         this.saving = false;
         this.body = '';
