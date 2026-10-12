@@ -125,4 +125,55 @@ class SearchTicketsTest extends TestCase
     {
         $this->assertEquals([], $this->search(3, '!'));
     }
+
+    #[Test]
+    public function staff_can_filter_by_author_username(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['author' => 'normal']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        sort($ids);
+        $this->assertEquals([1, 2, 3], $ids);
+    }
+
+    #[Test]
+    public function staff_can_negate_author_filter(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['-author' => 'normal']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        $this->assertEquals([], $ids);
+    }
+
+    #[Test]
+    public function author_filter_returns_empty_for_nonexistent_user(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['author' => 'nobody_here']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        $this->assertEquals([], $ids);
+    }
+
+    #[Test]
+    public function regular_member_author_filter_is_ignored_and_remains_scoped_to_self(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 2])
+                ->withQueryParams(['filter' => ['author' => 'staffa']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        sort($ids);
+        // User 2 only gets their own tickets, not staffa's
+        $this->assertEquals([1, 2, 3], $ids);
+    }
 }
