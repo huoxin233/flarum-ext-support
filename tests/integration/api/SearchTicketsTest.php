@@ -47,11 +47,12 @@ class SearchTicketsTest extends TestCase
             ],
             'linkrobins_support_categories' => [
                 ['id' => 1, 'name' => 'General', 'slug' => 'general', 'ticket_type' => 'standard', 'position' => 0, 'created_at' => $now, 'updated_at' => $now],
+                ['id' => 2, 'name' => 'Billing', 'slug' => 'billing', 'ticket_type' => 'standard', 'position' => 1, 'created_at' => $now, 'updated_at' => $now],
             ],
             'linkrobins_support_tickets' => [
-                ['id' => 1, 'category_id' => 1, 'user_id' => 2, 'subject' => 'Avatar Upload fails', 'status' => 'open', 'last_reply_at' => $now, 'created_at' => $now, 'updated_at' => $now],
-                ['id' => 2, 'category_id' => 1, 'user_id' => 2, 'subject' => 'Billing question', 'status' => 'open', 'last_reply_at' => $now, 'created_at' => $now, 'updated_at' => $now],
-                ['id' => 3, 'category_id' => 1, 'user_id' => 2, 'subject' => 'Something else', 'status' => 'open', 'last_reply_at' => $now, 'created_at' => $now, 'updated_at' => $now],
+                ['id' => 1, 'category_id' => 1, 'user_id' => 2, 'subject' => 'Avatar Upload fails', 'status' => 'open', 'priority' => 'urgent', 'last_reply_at' => $now, 'created_at' => $now, 'updated_at' => $now],
+                ['id' => 2, 'category_id' => 2, 'user_id' => 2, 'subject' => 'Billing question', 'status' => 'open', 'priority' => 'normal', 'last_reply_at' => $now, 'created_at' => $now, 'updated_at' => $now],
+                ['id' => 3, 'category_id' => 1, 'user_id' => 2, 'subject' => 'Something else', 'status' => 'open', 'priority' => 'low', 'last_reply_at' => $now, 'created_at' => $now, 'updated_at' => $now],
             ],
             'linkrobins_support_replies' => [
                 ['id' => 1, 'ticket_id' => 2, 'user_id' => 2, 'content' => '<t>The invoice total looks wrong.</t>', 'is_internal_note' => 0, 'created_at' => $now, 'updated_at' => $now],
@@ -174,6 +175,69 @@ class SearchTicketsTest extends TestCase
         $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
         sort($ids);
         // User 2 only gets their own tickets, not staffa's
+        $this->assertEquals([1, 2, 3], $ids);
+    }
+
+    #[Test]
+    public function staff_can_filter_by_category_slug(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['category' => 'billing']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        $this->assertEquals([2], $ids);
+    }
+
+    #[Test]
+    public function staff_can_filter_by_category_id(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['category' => '1']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        sort($ids);
+        $this->assertEquals([1, 3], $ids);
+    }
+
+    #[Test]
+    public function staff_can_negate_category_filter(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['-category' => 'general']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        $this->assertEquals([2], $ids);
+    }
+
+    #[Test]
+    public function staff_can_filter_by_priority(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['priority' => 'urgent']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        $this->assertEquals([1], $ids);
+    }
+
+    #[Test]
+    public function regular_member_priority_filter_is_ignored(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 2])
+                ->withQueryParams(['filter' => ['priority' => 'urgent']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        sort($ids);
+        // Member filter is ignored; user 2 still gets all their own tickets
         $this->assertEquals([1, 2, 3], $ids);
     }
 }
