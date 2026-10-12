@@ -367,6 +367,18 @@ linkrobins-support:
     awaiting_reminder_body: 'Our support team is waiting for your reply on this ticket. Answer when you can and we will pick it straight back up.'
     assigned_subject: 'Assigned to you: {subject}'
     assigned_body: '{name} assigned this support ticket to you.'
+  lib:
+    gambits:
+      tickets:
+        author:
+          key: author
+          hint: username
+        type:
+          key: type
+          hint: standard, appeal, or custom type
+        assigned:
+          key: assigned
+          hint: me or none
   # Server-resolved messages (API error details + rate-limit reasons). Only
   # used backend-side, so they live outside the forum/admin namespaces.
   api:
