@@ -2,16 +2,19 @@ import Page from 'flarum/common/components/Page';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import Avatar from 'flarum/common/components/Avatar';
 import Button from 'flarum/common/components/Button';
+import GambitsAutocompleteDropdown from 'flarum/common/components/GambitsAutocompleteDropdown';
 import PageStructure from 'flarum/forum/components/PageStructure';
 import SupportIndexSidebar from './SupportIndexSidebar';
+import Link from 'flarum/common/components/Link';
 import { tr, trText } from '../utils/translate';
-import { basePath, BASE_PATH, formatDate, safeNavigate, showError } from '../utils/helpers';
+import { formatDate, showError } from '../utils/helpers';
 import { canCreateSupportTicket, canHandleSupportTickets } from '../utils/permissions';
-import { statusChip, priorityChip, FILTER_OPTIONS, filterLabel, emptyLabel } from '../utils/status';
+import { statusChip, priorityChip } from '../utils/status';
 import { loadTickets } from '../utils/api';
 import { onLive } from '../utils/live';
 import ItemList from 'flarum/common/utils/ItemList';
 import { ticketTypes } from '../../common/ticketTypes';
+import { SUPPORT_TICKETS_RESOURCE, registerTicketGambits } from '../query/ticketGambits';
 
 const PAGE_SIZE = 25;
 
@@ -22,27 +25,27 @@ export default class SupportIndexPage extends Page {
   // Lists load a page at a time; "Load more" fetches the next one.
   hasMore = false;
   loadingMore = false;
-  // Search within the current view; empty means no search.
+  // Unified query string: single source of truth for both search and queue views.
   query = '';
+  _lastLoadedQuery = '';
   _searchTimer: any = null;
   // Each load gets a number; a response that is not the latest is dropped,
   // so a slow reply for "ava" cannot overwrite the results for "avatar".
   _loadSeq = 0;
-  filter: string | null = 'mine';
-  _lastLoadedFilter: string | null = 'mine';
   _stopLive: (() => void) | null = null;
   _liveTimer: any = null;
 
   oninit(vnode: any) {
     super.oninit(vnode);
+    registerTicketGambits();
     this.loading = true;
     this.error = null;
     this.tickets = [];
-    this.filter = this._filterFromAttrs(this.attrs);
+    this.query = this._queryFromAttrs(this.attrs);
+    this._lastLoadedQuery = this.query;
     try {
       app.setTitle(tr('nav', 'Support'));
     } catch (e) {}
-    this._lastLoadedFilter = this.filter;
     this._load();
   }
 
@@ -67,23 +70,31 @@ export default class SupportIndexPage extends Page {
   }
 
   onbeforeupdate(vnode: any) {
-    const nextFilter = this._filterFromAttrs(vnode.attrs);
-    if (nextFilter !== this._lastLoadedFilter) {
-      this.filter = nextFilter;
-      this._lastLoadedFilter = nextFilter;
+    const nextQuery = this._queryFromAttrs(vnode.attrs);
+    if (nextQuery !== this._lastLoadedQuery) {
+      this.query = nextQuery;
+      this._lastLoadedQuery = nextQuery;
       Promise.resolve().then(() => this._load());
     }
     return true;
   }
 
-  _filterFromAttrs(attrs: any): string {
-    const defaultFilter = canHandleSupportTickets() ? 'open' : 'mine';
-    const s = attrs && attrs.status;
-    if (!s) return defaultFilter;
-    for (let i = 0; i < FILTER_OPTIONS.length; i++) {
-      if (FILTER_OPTIONS[i].id === s) return s;
+  _queryFromAttrs(_attrs: any): string {
+    const qParam = m.route.param('q');
+    if (typeof qParam === 'string' && qParam.trim()) {
+      return qParam.trim();
     }
-    return defaultFilter;
+    return canHandleSupportTickets() ? 'is:open' : '';
+  }
+
+  _headingTitle(): any {
+    const q = this.query.trim();
+    if (!q || q === 'is:mine') return tr('index.my_tickets', 'My tickets');
+    if (q === 'is:open') return tr('status.open', 'Open');
+    if (q === 'assigned:me -is:closed') return tr('index.filter_assigned_to_me', 'Assigned to me');
+    if (q === 'is:unassigned -is:closed') return tr('index.filter_unassigned', 'Unassigned');
+    if (q === 'is:closed') return tr('status.closed', 'Closed');
+    return tr('nav', 'Support');
   }
 
   _load(quiet = false, freshSearch = false) {
@@ -138,21 +149,22 @@ export default class SupportIndexPage extends Page {
   }
 
   _params(offset: number, limit: number) {
-    const filter: any = {};
-    if (canHandleSupportTickets() && this.filter !== 'mine') {
-      if (this.filter === 'assigned_to_me' || this.filter === 'unassigned') {
-        // Work queues: what is still to be done, so closed tickets drop out.
-        filter.assigned = this.filter === 'assigned_to_me' ? 'me' : 'none';
-        filter['-status'] = 'closed';
-      } else if (this.filter && this.filter !== 'all') {
-        filter.status = this.filter;
-      }
-    } else {
-      filter.mine = '1';
-    }
+    let filter: Record<string, any> = {};
     if (this.query.trim()) {
       filter.q = this.query.trim();
+      if (app.search && app.search.gambits) {
+        filter = app.search.gambits.apply(SUPPORT_TICKETS_RESOURCE, filter);
+      }
     }
+
+    if (!canHandleSupportTickets()) {
+      filter.mine = '1';
+    }
+
+    if (filter.q !== undefined && !String(filter.q).trim()) {
+      delete filter.q;
+    }
+
     const params: any = { page: { offset, limit } };
     if (Object.keys(filter).length) {
       params.filter = filter;
@@ -177,7 +189,7 @@ export default class SupportIndexPage extends Page {
     try {
       return m(SupportIndexSidebar, {
         className: 'LinkRobinsSupport-sidebar',
-        activeFilter: this.filter,
+        query: this.query,
       });
     } catch (e) {
       console.error('[linkrobins/support] sidebar render failed:', e);
@@ -186,41 +198,52 @@ export default class SupportIndexPage extends Page {
   }
 
   _renderHeader() {
-    const label = this._headingFor(this.filter);
     return m('header', { className: 'LinkRobinsSupport-header LinkRobinsSupport-indexHeader' }, [
-      m('h1', { className: 'LinkRobinsSupport-title' }, [m('i', { className: 'fas fa-life-ring' }), ' ', label]),
+      m('h1', { className: 'LinkRobinsSupport-title' }, [m('i', { className: 'fas fa-life-ring' }), ' ', this._headingTitle()]),
       this._renderSearch(),
     ]);
   }
 
   /**
    * Search the current view by subject, reply text or ticket number. Typing
-   * reloads after a short pause rather than on every key.
+   * reloads after a short pause rather than on every key. Gambits (such as
+   * is:closed, author:<name>, etc.) are suggested via the GambitsAutocompleteDropdown.
    */
   _renderSearch() {
+    const onSearchChange = (value: string) => {
+      this.query = value;
+      clearTimeout(this._searchTimer);
+      this._searchTimer = setTimeout(() => {
+        this._lastLoadedQuery = this.query;
+        this._load(true, true);
+      }, 300);
+    };
+
+    const inputNode = m('input', {
+      className: 'FormControl LinkRobinsSupport-search-input',
+      type: 'search',
+      value: this.query,
+      placeholder: trText('index.search_placeholder', 'Search tickets'),
+      'aria-label': trText('index.search_placeholder', 'Search tickets'),
+      oninput: (e: any) => {
+        onSearchChange(e.target.value);
+      },
+    });
+
     return m('div', { className: 'LinkRobinsSupport-search' }, [
       m('i', { className: 'fas fa-search LinkRobinsSupport-search-icon', 'aria-hidden': 'true' }),
-      m('input', {
-        className: 'FormControl LinkRobinsSupport-search-input',
-        type: 'search',
-        value: this.query,
-        placeholder: trText('index.search_placeholder', 'Search tickets'),
-        'aria-label': trText('index.search_placeholder', 'Search tickets'),
-        oninput: (e: any) => {
-          this.query = e.target.value;
-          clearTimeout(this._searchTimer);
-          this._searchTimer = setTimeout(() => this._load(true, true), 300);
-        },
-      }),
+      GambitsAutocompleteDropdown
+        ? m(
+            GambitsAutocompleteDropdown,
+            {
+              resource: SUPPORT_TICKETS_RESOURCE,
+              query: this.query,
+              onchange: onSearchChange,
+            },
+            inputNode
+          )
+        : inputNode,
     ]);
-  }
-
-  _headingFor(filter: string | null) {
-    if (!filter || filter === 'mine') return tr('nav', 'Support');
-    for (let i = 0; i < FILTER_OPTIONS.length; i++) {
-      if (FILTER_OPTIONS[i].id === filter) return filterLabel(FILTER_OPTIONS[i]);
-    }
-    return tr('nav', 'Support');
   }
 
   _renderList() {
@@ -230,11 +253,14 @@ export default class SupportIndexPage extends Page {
     if (this.error) {
       return m('div', { className: 'LinkRobinsSupport-empty' }, tr('errors.load_tickets', 'Could not load tickets.'));
     }
-    if (!this.tickets.length && this.query.trim()) {
-      return m('div', { className: 'LinkRobinsSupport-empty' }, tr('index.no_results', 'No tickets match your search.'));
-    }
     if (!this.tickets.length) {
-      return m('div', { className: 'LinkRobinsSupport-empty' }, emptyLabel(this.filter, canCreateSupportTicket()));
+      return m(
+        'div',
+        { className: 'LinkRobinsSupport-empty' },
+        this.query.trim()
+          ? tr('index.no_results', 'No tickets match your search.')
+          : (canCreateSupportTicket() ? tr('index.empty', 'No tickets yet. Need help? Open one below.') : tr('index.empty_no_create', 'No tickets yet.'))
+      );
     }
     return [
       m(
@@ -299,18 +325,14 @@ export default class SupportIndexPage extends Page {
   _renderRow(ticket: any) {
     const user = ticket.user && ticket.user();
     const cat = ticket.category && ticket.category();
-    const href = basePath() + BASE_PATH + '/' + encodeURIComponent(ticket.id());
     const isDeleted = !!(ticket.isDeleted && ticket.isDeleted());
     const isUnread = !!(ticket.isUnread && ticket.isUnread());
 
     return m(
-      'a',
+      Link,
       {
-        href,
+        href: app.route('linkrobins-support.show', { id: ticket.id() }),
         className: 'LinkRobinsSupport-row' + (isDeleted ? ' LinkRobinsSupport-row--deleted' : '') + (isUnread ? ' is-unread' : ''),
-        onclick: (e: any) => {
-          safeNavigate(href, e);
-        },
         key: 'ticket-' + ticket.id(),
       },
       [

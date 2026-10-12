@@ -21,7 +21,7 @@ import {
 
 import { tr } from './forum/utils/translate';
 import { installRealtime } from './forum/utils/live';
-import { basePath, BASE_PATH, showNavInSidebar, showNavInAccountMenu, readForumAttribute, showError } from './forum/utils/helpers';
+import { showNavInSidebar, showNavInAccountMenu, readForumAttribute, showError } from './forum/utils/helpers';
 import { ticketTypes, TicketTypeRegistry } from './common/ticketTypes';
 import type { TicketTypeClientDriver } from './common/ticketTypes';
 import { registerTicketGambits } from './forum/query/ticketGambits';
@@ -44,10 +44,9 @@ app.initializers.add('linkrobins-support', () => {
   // discussion never opens them, and parsing them on every page costs phones
   // time. extend.php publishes the chunks with ->jsDirectory(); without it
   // they 404 and every support route falls back to the home page.
-  app.routes['linkrobins-support.index'] = { path: BASE_PATH, component: () => import('./forum/components/SupportIndexPage') };
-  app.routes['linkrobins-support.compose'] = { path: BASE_PATH + '/new', component: () => import('./forum/components/SupportComposePage') };
-  app.routes['linkrobins-support.filtered'] = { path: BASE_PATH + '/status/:status', component: () => import('./forum/components/SupportIndexPage') };
-  app.routes['linkrobins-support.show'] = { path: BASE_PATH + '/:id', component: () => import('./forum/components/SupportShowPage') };
+  app.routes['linkrobins-support.index'] = { path: '/support', component: () => import('./forum/components/SupportIndexPage') };
+  app.routes['linkrobins-support.compose'] = { path: '/support/new', component: () => import('./forum/components/SupportComposePage') };
+  app.routes['linkrobins-support.show'] = { path: '/support/:id', component: () => import('./forum/components/SupportShowPage') };
 
   if (app.notificationComponents) {
     app.notificationComponents['linkrobinsSupportNewReply'] = NewSupportReplyNotification;
@@ -126,7 +125,7 @@ app.initializers.add('linkrobins-support', () => {
     );
   });
 
-  const supportLink = () => m(LinkButton, { href: basePath() + BASE_PATH, icon: 'fas fa-life-ring' }, tr('nav', 'Support'));
+  const supportLink = () => m(LinkButton, { href: app.route('linkrobins-support.index'), icon: 'fas fa-life-ring' }, tr('nav', 'Support'));
 
   // Support link in the forum's sidebar nav. Priority -11 slots it directly
   // below flarum/tags' "Tags" link (-10) and above its separator (-12) and tag

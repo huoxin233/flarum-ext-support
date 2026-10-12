@@ -9,8 +9,9 @@ import ReplyItem from './ReplyItem';
 import TicketEventItem from './TicketEventItem';
 import SavedRepliesMenu from './SavedRepliesMenu';
 import ReplyComposer from './ReplyComposer';
+import Link from 'flarum/common/components/Link';
 import { tr } from '../utils/translate';
-import { basePath, BASE_PATH, safeNavigate, showError } from '../utils/helpers';
+import { showError } from '../utils/helpers';
 import { canHandleSupportTickets } from '../utils/permissions';
 import { loadTicket, loadReplies, loadEvents, markTicketRead, postReply, uploadFilesToBody } from '../utils/api';
 import { onLive } from '../utils/live';
@@ -180,13 +181,10 @@ export default class SupportShowPage extends Page {
             // Back link first: the header is a column, so this reads as a
             // breadcrumb above the title instead of a second column beside it.
             m(
-              'a',
+              Link,
               {
-                href: basePath() + BASE_PATH,
+                href: app.route('linkrobins-support.index'),
                 className: 'Button Button--text LinkRobinsSupport-backBtn',
-                onclick: (e: any) => {
-                  safeNavigate(basePath() + BASE_PATH, e);
-                },
               },
               [m('i', { className: 'fas fa-arrow-left' }), ' ', tr('action.back', 'Back')]
             ),
