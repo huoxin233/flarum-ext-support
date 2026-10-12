@@ -210,6 +210,14 @@ export default class SupportIndexPage extends Page {
    * is:closed, author:<name>, etc.) are suggested via the GambitsAutocompleteDropdown.
    */
   _renderSearch() {
+    const onSubmit = (value?: string) => {
+      const q = (typeof value === 'string' ? value : this.query).trim();
+      const currentQ = (m.route.param('q') || '').trim();
+      if (q !== currentQ) {
+        m.route.set(app.route('linkrobins-support.index', q ? { q } : {}));
+      }
+    };
+
     const onSearchChange = (value: string) => {
       this.query = value;
       clearTimeout(this._searchTimer);
@@ -227,6 +235,12 @@ export default class SupportIndexPage extends Page {
       'aria-label': trText('index.search_placeholder', 'Search tickets'),
       oninput: (e: any) => {
         onSearchChange(e.target.value);
+      },
+      onkeydown: (e: any) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          onSubmit();
+        }
       },
     });
 
@@ -259,7 +273,9 @@ export default class SupportIndexPage extends Page {
         { className: 'LinkRobinsSupport-empty' },
         this.query.trim()
           ? tr('index.no_results', 'No tickets match your search.')
-          : (canCreateSupportTicket() ? tr('index.empty', 'No tickets yet. Need help? Open one below.') : tr('index.empty_no_create', 'No tickets yet.'))
+          : canCreateSupportTicket()
+            ? tr('index.empty', 'No tickets yet. Need help? Open one below.')
+            : tr('index.empty_no_create', 'No tickets yet.')
       );
     }
     return [
