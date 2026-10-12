@@ -379,6 +379,12 @@ linkrobins-support:
         assigned:
           key: assigned
           hint: me or none
+        priority:
+          key: priority
+          hint: urgent, normal, or low
+        category:
+          key: category
+          hint: slug
   # Server-resolved messages (API error details + rate-limit reasons). Only
   # used backend-side, so they live outside the forum/admin namespaces.
   api:

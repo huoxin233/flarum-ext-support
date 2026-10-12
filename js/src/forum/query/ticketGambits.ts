@@ -228,6 +228,81 @@ export class AuthorGambit extends KeyValueGambit {
 }
 
 /**
+ * Staff-only filter for tickets by priority: priority:urgent, priority:normal, priority:low.
+ */
+export class PriorityGambit extends KeyValueGambit {
+  key(): string {
+    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.priority.key', {}, true)) || 'priority';
+  }
+
+  hint(): string {
+    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.priority.hint', {}, true)) || 'urgent, normal, or low';
+  }
+
+  filterKey(): string {
+    return 'priority';
+  }
+
+  pattern(): string {
+    return `${this.key()}:(urgent|normal|low)`;
+  }
+
+  toFilter(matches: string[], negate: boolean): Record<string, any> {
+    const key = (negate ? '-' : '') + this.filterKey();
+    return {
+      [key]: matches[1],
+    };
+  }
+
+  fromFilter(value: any, negate: boolean): string {
+    if (typeof value === 'string') {
+      return `${negate ? '-' : ''}${this.key()}:${value}`;
+    }
+    return '';
+  }
+
+  enabled(): boolean {
+    return canHandleSupportTickets();
+  }
+}
+
+/**
+ * Filter tickets by category slug: category:<slug> or cat:<slug>.
+ */
+export class CategoryGambit extends KeyValueGambit {
+  key(): string {
+    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.category.key', {}, true)) || 'category';
+  }
+
+  hint(): string {
+    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.category.hint', {}, true)) || 'slug';
+  }
+
+  filterKey(): string {
+    return 'category';
+  }
+
+  pattern(): string {
+    const key = this.key();
+    return `(?:${key}|cat):([a-z0-9_-]+)`;
+  }
+
+  toFilter(matches: string[], negate: boolean): Record<string, any> {
+    const key = (negate ? '-' : '') + this.filterKey();
+    return {
+      [key]: matches[1],
+    };
+  }
+
+  fromFilter(value: any, negate: boolean): string {
+    if (typeof value === 'string') {
+      return `${negate ? '-' : ''}${this.key()}:${value}`;
+    }
+    return '';
+  }
+}
+
+/**
  * Register support ticket gambits with Flarum's frontend GambitManager.
  * Appends without duplicate registration to preserve third-party extensibility.
  */
@@ -235,7 +310,16 @@ export function registerTicketGambits(): void {
   if (app.search && app.search.gambits) {
     app.search.gambits.gambits[SUPPORT_TICKETS_RESOURCE] ||= [];
     const registry = app.search.gambits.gambits[SUPPORT_TICKETS_RESOURCE];
-    const defaultGambits = [StatusGambit, AssignedGroupedGambit, AssignedGambit, MineGambit, TicketTypeGambit, AuthorGambit];
+    const defaultGambits = [
+      StatusGambit,
+      AssignedGroupedGambit,
+      AssignedGambit,
+      MineGambit,
+      PriorityGambit,
+      CategoryGambit,
+      TicketTypeGambit,
+      AuthorGambit,
+    ];
     for (const gambit of defaultGambits) {
       if (!registry.includes(gambit)) {
         registry.push(gambit);
