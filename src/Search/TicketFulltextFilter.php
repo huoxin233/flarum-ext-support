@@ -7,6 +7,7 @@ use Flarum\Search\Database\DatabaseSearchState;
 use Flarum\Search\SearchState;
 use Illuminate\Database\Eloquent\Builder;
 use LinkRobins\Support\Access\SupportAbilities;
+use LinkRobins\Support\SupportReply;
 
 /**
  * `filter[q]=...` on tickets: matches the subject, the text of any reply the
@@ -40,6 +41,7 @@ class TicketFulltextFilter extends AbstractFulltextFilter
         $query->where(function (Builder $q) use ($like, $operator, $isStaff, $number) {
             $q->where('subject', $operator, $like)
                 ->orWhereHas('replies', function (Builder $sub) use ($like, $operator, $isStaff) {
+                    /** @var Builder<SupportReply> $sub */
                     if ($isStaff) {
                         $sub->withTrashed();
                     } else {
