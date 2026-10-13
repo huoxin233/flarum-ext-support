@@ -243,15 +243,12 @@ export class PriorityGambit extends KeyValueGambit {
     return 'priority';
   }
 
-  pattern(): string {
-    return `${this.key()}:(urgent|normal|low|Urgent|Normal|Low)`;
+  valuePattern(): string {
+    return '(urgent|normal|low|Urgent|Normal|Low)';
   }
 
-  toFilter(matches: string[], negate: boolean): Record<string, any> {
-    const key = (negate ? '-' : '') + this.filterKey();
-    return {
-      [key]: matches[1].toLowerCase(),
-    };
+  gambitValueToFilterValue(value: string): string {
+    return value.toLowerCase();
   }
 
   fromFilter(value: any, negate: boolean): string {

@@ -116,7 +116,10 @@ export default class SupportShowPage extends Page {
         markTicketRead(this.ticket);
         try {
           const t = this.ticket && this.ticket.subject();
-          if (t) app.setTitle(t);
+          if (t) {
+            app.setTitle(t);
+            app.history.push('linkrobins-support.show', t);
+          }
         } catch (e) {}
         m.redraw();
       })

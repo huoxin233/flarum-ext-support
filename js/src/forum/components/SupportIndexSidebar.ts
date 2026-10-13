@@ -61,6 +61,7 @@ export default class SupportIndexSidebar extends IndexSidebar {
         {
           buttonClassName: 'Button',
           className: 'App-titleControl',
+          accessibleToggleLabel: app.translator.trans('core.forum.index.toggle_sidenav_dropdown_accessible_label'),
           defaultLabel: this._currentLabel(),
         },
         this.navItems().toArray()
