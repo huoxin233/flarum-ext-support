@@ -5,15 +5,15 @@ import { canHandleSupportTickets } from '../utils/permissions';
 export const SUPPORT_TICKETS_RESOURCE = 'linkrobins-support-tickets';
 
 /**
- * Filter support tickets by status: is:open, is:in_progress, is:awaiting_user, is:resolved, is:closed.
- * Supports negation (e.g. -is:closed).
+ * Filter support tickets by status: is:open, is:in-progress, is:awaiting-response, is:resolved, is:closed.
+ * Accepts both kebab-case and snake_case aliases. Supports negation (e.g. -is:closed).
  */
 export class StatusGambit implements IGambit<GambitType.Grouped> {
   type = GambitType.Grouped;
   predicates = false;
 
   key(): string[] {
-    return ['open', 'in_progress', 'awaiting_user', 'resolved', 'closed'];
+    return ['open', 'in-progress', 'awaiting-response', 'resolved', 'closed'];
   }
 
   filterKey(): string {
@@ -30,22 +30,31 @@ export class StatusGambit implements IGambit<GambitType.Grouped> {
 
   pattern(): string {
     const is = this.groupKey();
-    return `${is}:(${this.key().join('|')})`;
+    return `${is}:(open|in[-_]progress|awaiting[-_](?:response|user)|resolved|closed)`;
   }
 
   toFilter(matches: string[], negate: boolean): Record<string, any> {
     const key = (negate ? '-' : '') + this.filterKey();
+    let val = matches[1].toLowerCase().replace('-', '_');
+    if (val === 'awaiting_response') {
+      val = 'awaiting_user';
+    }
     return {
-      [key]: matches[1],
+      [key]: val,
     };
   }
 
   fromFilter(value: any, negate: boolean): string {
     const is = this.groupKey();
+    const normalize = (v: string) => {
+      if (v === 'awaiting_user' || v === 'awaiting_response') return 'awaiting-response';
+      if (v === 'in_progress') return 'in-progress';
+      return v;
+    };
     if (Array.isArray(value)) {
-      return value.map((v) => `${negate ? '-' : ''}${is}:${v}`).join(' ');
+      return value.map((v) => `${negate ? '-' : ''}${is}:${normalize(v)}`).join(' ');
     }
-    return `${negate ? '-' : ''}${is}:${value}`;
+    return `${negate ? '-' : ''}${is}:${normalize(value)}`;
   }
 
   suggestion(): GroupedGambitSuggestion {
@@ -68,7 +77,7 @@ export class AssignedGroupedGambit implements IGambit<GambitType.Grouped> {
   predicates = false;
 
   key(): string[] {
-    return ['assigned', 'unassigned'];
+    return ['unassigned', 'assigned'];
   }
 
   filterKey(): string {
@@ -85,7 +94,7 @@ export class AssignedGroupedGambit implements IGambit<GambitType.Grouped> {
 
   pattern(): string {
     const is = this.groupKey();
-    return `${is}:(assigned|unassigned)`;
+    return `${is}:(unassigned|assigned)`;
   }
 
   toFilter(matches: string[], negate: boolean): Record<string, any> {
@@ -119,16 +128,21 @@ export class AssignedGroupedGambit implements IGambit<GambitType.Grouped> {
   }
 }
 
+function safeTrans(key: string, fallback: string): string {
+  const fullKey = 'linkrobins-support.lib.gambits.tickets.' + key;
+  return ((app.translator as any)?.translations?.[fullKey] && app.translator.trans(fullKey, {}, true)) || fallback;
+}
+
 /**
  * Key-value assignee filter: assigned:me or assigned:none (staff only).
  */
 export class AssignedGambit extends KeyValueGambit {
   key(): string {
-    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.assigned.key', {}, true)) || 'assigned';
+    return safeTrans('assigned.key', 'assigned');
   }
 
   hint(): string {
-    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.assigned.hint', {}, true)) || 'me or none';
+    return safeTrans('assigned.hint', 'me or none');
   }
 
   filterKey(): string {
@@ -150,6 +164,9 @@ export class AssignedGambit extends KeyValueGambit {
     if (value === 'me') {
       return `${negate ? '-' : ''}${this.key()}:me`;
     }
+    if (value === 'none') {
+      return `${negate ? '-' : ''}${this.key()}:none`;
+    }
     return '';
   }
 
@@ -163,7 +180,7 @@ export class AssignedGambit extends KeyValueGambit {
  */
 export class MineGambit extends BooleanGambit {
   key(): string {
-    return 'mine';
+    return safeTrans('mine.key', 'mine');
   }
 
   filterKey(): string {
@@ -179,7 +196,7 @@ export class MineGambit extends BooleanGambit {
 
   fromFilter(_value: any, negate: boolean): string {
     const is = this.groupKey();
-    return `${negate ? '-' : ''}${is}:mine`;
+    return `${negate ? '-' : ''}${is}:${this.key()}`;
   }
 
   enabled(): boolean {
@@ -192,13 +209,11 @@ export class MineGambit extends BooleanGambit {
  */
 export class TicketTypeGambit extends KeyValueGambit {
   key(): string {
-    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.type.key', {}, true)) || 'type';
+    return safeTrans('type.key', 'type');
   }
 
   hint(): string {
-    return (
-      (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.type.hint', {}, true)) || 'standard, appeal, or custom type'
-    );
+    return safeTrans('type.hint', 'standard, appeal, or custom type');
   }
 
   filterKey(): string {
@@ -211,11 +226,11 @@ export class TicketTypeGambit extends KeyValueGambit {
  */
 export class AuthorGambit extends KeyValueGambit {
   key(): string {
-    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.author.key', {}, true)) || 'author';
+    return safeTrans('author.key', 'author');
   }
 
   hint(): string {
-    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.author.hint', {}, true)) || 'username';
+    return safeTrans('author.hint', 'username');
   }
 
   filterKey(): string {
@@ -232,11 +247,11 @@ export class AuthorGambit extends KeyValueGambit {
  */
 export class PriorityGambit extends KeyValueGambit {
   key(): string {
-    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.priority.key', {}, true)) || 'priority';
+    return safeTrans('priority.key', 'priority');
   }
 
   hint(): string {
-    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.priority.hint', {}, true)) || 'urgent, normal, or low';
+    return safeTrans('priority.hint', 'urgent, normal, or low');
   }
 
   filterKey(): string {
@@ -268,11 +283,11 @@ export class PriorityGambit extends KeyValueGambit {
  */
 export class CategoryGambit extends KeyValueGambit {
   key(): string {
-    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.category.key', {}, true)) || 'category';
+    return safeTrans('category.key', 'category');
   }
 
   hint(): string {
-    return (app.translator && app.translator.trans('linkrobins-support.lib.gambits.tickets.category.hint', {}, true)) || 'slug';
+    return safeTrans('category.hint', 'slug');
   }
 
   filterKey(): string {

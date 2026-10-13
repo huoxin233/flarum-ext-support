@@ -8,6 +8,7 @@ import { tr } from './utils/translate';
 import { canHandleSupportTickets } from './utils/permissions';
 import { SUPPORT_TICKETS_RESOURCE } from './query/ticketGambits';
 import SupportTicketsSearchSource from './query/SupportTicketsSearchSource';
+import SupportGambitsAutocomplete from './query/SupportGambitsAutocomplete';
 import type { GlobalSearchSource } from 'flarum/common/components/AbstractGlobalSearch';
 
 const STANDARD_QUEUES = ['is:mine', 'is:open', 'assigned:me -is:closed', 'is:unassigned -is:closed', 'is:closed'];
@@ -61,10 +62,87 @@ export default function addSupportSearch() {
     }
   });
 
-  extend('flarum/common/components/SearchModal' as any, 'selectResult', function () {
-    if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
-      app.modal.close();
+  // Enhanced gambits autocomplete for support tickets with full value suggestions and hints
+  override('flarum/common/components/SearchModal' as any, 'gambits', function (this: any, original: any) {
+    if (this.activeSource()?.resource === SUPPORT_TICKETS_RESOURCE) {
+      if (
+        !this.gambitsAutocomplete[SUPPORT_TICKETS_RESOURCE] ||
+        !(this.gambitsAutocomplete[SUPPORT_TICKETS_RESOURCE] instanceof SupportGambitsAutocomplete)
+      ) {
+        this.gambitsAutocomplete[SUPPORT_TICKETS_RESOURCE] = new SupportGambitsAutocomplete(
+          SUPPORT_TICKETS_RESOURCE,
+          () => this.inputElement(),
+          (val: string) => {
+            this.query(val);
+            const input = this.inputElement && this.inputElement()[0];
+            if (input) {
+              input.value = val;
+            }
+          },
+          (val: string) => {
+            this.search(val);
+            m.redraw();
+          }
+        );
+      }
+      return this.gambitsAutocomplete[SUPPORT_TICKETS_RESOURCE].suggestions(this.query());
     }
+    return original();
+  });
+
+  override('flarum/common/components/SearchModal' as any, 'selectResult', function (this: any, original: any) {
+    if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
+      if (this.searchTimeout) clearTimeout(this.searchTimeout);
+
+      const q = this.query && this.query();
+      const trimmed = q ? q.trim() : '';
+
+      const item = this.getItem(this.index);
+      const isResult = !!item.attr('data-id');
+      let selectedUrl: string | null = null;
+
+      if (isResult) {
+        const id = item.attr('data-id');
+        selectedUrl = (id && this.activeSource().gotoItem(id as string)) || null;
+      }
+
+      if (!selectedUrl && item.find('a').length) {
+        selectedUrl = item.find('a').attr('href') || null;
+      }
+
+      if (selectedUrl) {
+        app.modal.close();
+        m.route.set(selectedUrl);
+        return;
+      }
+
+      // If user explicitly navigated to a gambit suggestion button with arrow keys, click it
+      if (this._userNavigated && item.find('button').length) {
+        this._userNavigated = false;
+        item.find('button')[0].click();
+        return;
+      }
+
+      // If no preview item was loaded/selected yet, immediately execute full-page search
+      if (trimmed) {
+        app.modal.close();
+        m.route.set(app.route('linkrobins-support.search', { q: trimmed }));
+        return;
+      }
+
+      return;
+    }
+
+    return original();
+  });
+
+  override('flarum/common/components/SearchModal' as any, 'onsubmit', function (this: any, original: any, e: any) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
+      this.selectResult();
+      return;
+    }
+    return original(e);
   });
 
   // Populate default filters for support tickets on modal initialization
@@ -133,16 +211,32 @@ export default function addSupportSearch() {
     return original(value);
   });
 
-  // Track initial query on modal initialization to detect user modifications
+  // Track initial query and keyboard navigation state on modal initialization
   extend('flarum/common/components/SearchModal' as any, 'oninit', function (this: any) {
     if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
       this._supportInitialQuery = this.query && this.query();
+      this._userNavigated = false;
     }
   });
 
-  // Prepare input with trailing space, end cursor position, and trigger search on mount
+  // Prepare input with trailing space, track key events, and trigger search on mount
   extend('flarum/common/components/SearchModal' as any, 'oncreate', function (this: any) {
     if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
+      this._userNavigated = false;
+      const $input = this.inputElement && this.inputElement();
+      if ($input && $input.length) {
+        $input.on('keydown', (e: any) => {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            this._userNavigated = true;
+          } else if (e.key !== 'Enter') {
+            this._userNavigated = false;
+          }
+        });
+        $input.on('input', () => {
+          this._userNavigated = false;
+        });
+      }
+
       const q = this.query && this.query();
       if (q && q.trim()) {
         const val = q.endsWith(' ') ? q : q.trim() + ' ';
@@ -156,6 +250,15 @@ export default function addSupportSearch() {
           } catch (e) {}
         }
         this.search(val.trim());
+      }
+    }
+  });
+
+  // Clear automatic .active highlight on open unless user intentionally pressed arrow keys
+  extend('flarum/common/components/SearchModal' as any, 'onupdate', function (this: any) {
+    if (app.current.get('routeName')?.startsWith('linkrobins-support.') && !this._userNavigated) {
+      if (typeof this.selectableItems === 'function') {
+        this.selectableItems().removeClass('active');
       }
     }
   });
