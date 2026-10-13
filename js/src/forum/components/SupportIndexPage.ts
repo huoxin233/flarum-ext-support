@@ -85,7 +85,11 @@ export default class SupportIndexPage extends Page {
     if (typeof qParam === 'string' && qParam.trim()) {
       return qParam.trim();
     }
-    return canHandleSupportTickets() ? 'is:open' : '';
+    if (canHandleSupportTickets()) {
+      const pref = app.session?.user?.preferences()?.linkrobinsSupportStaffDefaultView;
+      return typeof pref === 'string' && pref.trim() ? pref.trim() : 'is:open';
+    }
+    return '';
   }
 
   _headingTitle(): any {

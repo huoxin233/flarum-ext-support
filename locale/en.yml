@@ -144,6 +144,9 @@ linkrobins-support:
       assigned: '{name} assigned a ticket to you'
       assigned_generic: 'A ticket was assigned to you'
     settings:
+      heading: 'Support Desk'
+      staff_default_view_label: 'Default support desk view'
+      staff_default_view_help: 'Choose which queue or view opens by default when you navigate to the support desk without an active filter.'
       notify_new_reply_label: 'Someone replies to my support ticket'
       notify_new_ticket_label: 'A new support ticket is opened (staff)'
       notify_status_changed_label: "A support ticket's status changes"

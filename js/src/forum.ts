@@ -3,6 +3,8 @@ import IndexSidebar from 'flarum/forum/components/IndexSidebar';
 import UserControls from 'flarum/forum/utils/UserControls';
 import LinkButton from 'flarum/common/components/LinkButton';
 import Button from 'flarum/common/components/Button';
+import Select from 'flarum/common/components/Select';
+import FieldSet from 'flarum/common/components/FieldSet';
 
 import SupportCategory from './common/models/SupportCategory';
 import SupportTicket from './common/models/SupportTicket';
@@ -19,9 +21,10 @@ import {
   installSupportNotificationGrouping,
 } from './forum/components/notifications';
 
-import { tr } from './forum/utils/translate';
+import { tr, trText } from './forum/utils/translate';
 import { installRealtime } from './forum/utils/live';
 import { showNavInSidebar, showNavInAccountMenu, readForumAttribute, showError } from './forum/utils/helpers';
+import { canHandleSupportTickets } from './forum/utils/permissions';
 import { ticketTypes, TicketTypeRegistry } from './common/ticketTypes';
 import type { TicketTypeClientDriver } from './common/ticketTypes';
 import { registerTicketGambits } from './forum/query/ticketGambits';
@@ -93,6 +96,56 @@ app.initializers.add('linkrobins-support', () => {
       icon: 'fas fa-hourglass-half',
       label: tr('settings.notify_awaiting_reminder_label', 'Support has been waiting a few days for my reply'),
     });
+  });
+
+  // Staff default landing view preference in the user account SettingsPage.
+  // Deferred extend using string path to avoid pulling the SettingsPage chunk eagerly.
+  extend('flarum/forum/components/SettingsPage' as any, 'settingsItems', function (this: any, items: any) {
+    if (!canHandleSupportTickets()) return;
+
+    const current = this.user?.preferences()?.linkrobinsSupportStaffDefaultView || 'is:open';
+
+    const options: Record<string, string> = {
+      'is:open': trText('status.open', 'Open'),
+      'assigned:me -is:closed': trText('index.filter_assigned_to_me', 'Assigned to me'),
+      'is:unassigned -is:closed': trText('index.filter_unassigned', 'Unassigned'),
+      'is:mine': trText('index.my_tickets', 'My tickets'),
+    };
+
+    items.add(
+      'linkrobinsSupport',
+      m(
+        FieldSet,
+        {
+          className: 'Settings-linkrobinsSupport FieldSet--min FieldSet--col',
+          label: tr('settings.heading', 'Support Desk'),
+        },
+        m('div', { className: 'Form-group' }, [
+          m('label', null, tr('settings.staff_default_view_label', 'Default support desk view')),
+          m(Select, {
+            options,
+            value: current,
+            onchange: (val: string) => {
+              this.staffDefaultViewLoading = true;
+              this.user.savePreferences({ linkrobinsSupportStaffDefaultView: val }).then(() => {
+                this.staffDefaultViewLoading = false;
+                m.redraw();
+              });
+            },
+            disabled: this.staffDefaultViewLoading,
+          }),
+          m(
+            'p',
+            { className: 'helpText' },
+            tr(
+              'settings.staff_default_view_help',
+              'Choose which queue or view opens by default when you navigate to the support desk without an active filter.'
+            )
+          ),
+        ])
+      ),
+      50
+    );
   });
 
   // Appeal-ban toggle in the user's moderation-controls dropdown (the same menu

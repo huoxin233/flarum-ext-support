@@ -72,6 +72,9 @@ return [
     (new Extend\ServiceProvider())
         ->register(SupportServiceProvider::class),
 
+    (new Extend\User())
+        ->registerPreference('linkrobinsSupportStaffDefaultView', 'strval', 'is:open'),
+
     (new SupportExtend\TicketType())
         ->add(StandardTicketType::ID, StandardTicketType::class)
         ->add(AppealTicketType::ID, AppealTicketType::class),
