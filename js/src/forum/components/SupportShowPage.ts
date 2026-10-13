@@ -58,6 +58,7 @@ export default class SupportShowPage extends Page {
     this.loading = true;
     this.error = null;
     this.ticket = null;
+    app.current.set('ticket', null);
     this.replies = [];
     this.events = [];
     this.replyText = '';
@@ -81,6 +82,7 @@ export default class SupportShowPage extends Page {
   onremove(vnode: any) {
     if (this._stopLive) this._stopLive();
     this._stopLive = null;
+    app.current.set('ticket', null);
     super.onremove(vnode);
   }
 
@@ -91,6 +93,7 @@ export default class SupportShowPage extends Page {
       this._ticketId = newId;
       this.loading = true;
       this.ticket = null;
+      app.current.set('ticket', null);
       this.replies = [];
       this.events = [];
       if (newId) this._load();
@@ -109,6 +112,7 @@ export default class SupportShowPage extends Page {
     ])
       .then((results: any[]) => {
         this.ticket = results[0];
+        app.current.set('ticket', this.ticket);
         this.replies = results[1] || [];
         this.events = results[2] || [];
         this._allLoaded = this._countsAllLoaded();

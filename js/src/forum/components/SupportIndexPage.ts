@@ -42,6 +42,7 @@ export default class SupportIndexPage extends Page {
     this.tickets = [];
     this.query = this._queryFromAttrs(this.attrs);
     this._lastLoadedQuery = this.query;
+    app.current.set('query', this.query);
     app.search.state.setValue(app.search.state.getInitialSearch());
     try {
       app.setTitle(tr('nav', 'Support'));
@@ -67,6 +68,7 @@ export default class SupportIndexPage extends Page {
     this._stopLive = null;
     clearTimeout(this._liveTimer);
     app.search.state.clear();
+    app.current.set('query', null);
     super.onremove(vnode);
   }
 
@@ -75,6 +77,7 @@ export default class SupportIndexPage extends Page {
     if (nextQuery !== this._lastLoadedQuery) {
       this.query = nextQuery;
       this._lastLoadedQuery = nextQuery;
+      app.current.set('query', nextQuery);
       app.search.state.setValue(app.search.state.getInitialSearch());
       Promise.resolve().then(() => this._load());
     }
@@ -103,7 +106,7 @@ export default class SupportIndexPage extends Page {
     return tr('nav', 'Support');
   }
 
-  _load(quiet = false, freshSearch = false) {
+  _load(quiet = false) {
     // A quiet reload keeps the current list on screen instead of a spinner.
     if (!quiet) {
       this.loading = true;
@@ -112,7 +115,7 @@ export default class SupportIndexPage extends Page {
 
     // A quiet (live) reload refetches everything already on screen, so a list
     // the viewer has paged through does not snap back to the first page.
-    const limit = quiet && !freshSearch ? Math.min(100, Math.max(PAGE_SIZE, this.tickets.length)) : PAGE_SIZE;
+    const limit = quiet ? Math.min(100, Math.max(PAGE_SIZE, this.tickets.length)) : PAGE_SIZE;
     const seq = ++this._loadSeq;
 
     loadTickets(this._params(0, limit))
