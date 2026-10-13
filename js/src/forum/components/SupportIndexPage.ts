@@ -2,7 +2,6 @@ import Page from 'flarum/common/components/Page';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
 import Avatar from 'flarum/common/components/Avatar';
 import Button from 'flarum/common/components/Button';
-import GambitsAutocompleteDropdown from 'flarum/common/components/GambitsAutocompleteDropdown';
 import PageStructure from 'flarum/forum/components/PageStructure';
 import SupportIndexSidebar from './SupportIndexSidebar';
 import Link from 'flarum/common/components/Link';
@@ -19,6 +18,7 @@ import { SUPPORT_TICKETS_RESOURCE, registerTicketGambits } from '../query/ticket
 const PAGE_SIZE = 25;
 
 export default class SupportIndexPage extends Page {
+  static providesInitialSearch = true;
   loading = true;
   error: any = null;
   tickets: any[] = [];
@@ -28,7 +28,6 @@ export default class SupportIndexPage extends Page {
   // Unified query string: single source of truth for both search and queue views.
   query = '';
   _lastLoadedQuery = '';
-  _searchTimer: any = null;
   // Each load gets a number; a response that is not the latest is dropped,
   // so a slow reply for "ava" cannot overwrite the results for "avatar".
   _loadSeq = 0;
@@ -43,9 +42,11 @@ export default class SupportIndexPage extends Page {
     this.tickets = [];
     this.query = this._queryFromAttrs(this.attrs);
     this._lastLoadedQuery = this.query;
+    app.search.state.setValue(app.search.state.getInitialSearch());
     try {
       app.setTitle(tr('nav', 'Support'));
     } catch (e) {}
+    app.history.push('linkrobins-support.index', trText('nav', 'Support'));
     this._load();
   }
 
@@ -65,16 +66,16 @@ export default class SupportIndexPage extends Page {
     if (this._stopLive) this._stopLive();
     this._stopLive = null;
     clearTimeout(this._liveTimer);
-    clearTimeout(this._searchTimer);
+    app.search.state.clear();
     super.onremove(vnode);
   }
 
   onbeforeupdate(vnode: any) {
     const nextQuery = this._queryFromAttrs(vnode.attrs);
     if (nextQuery !== this._lastLoadedQuery) {
-      clearTimeout(this._searchTimer);
       this.query = nextQuery;
       this._lastLoadedQuery = nextQuery;
+      app.search.state.setValue(app.search.state.getInitialSearch());
       Promise.resolve().then(() => this._load());
     }
     return true;
@@ -205,64 +206,6 @@ export default class SupportIndexPage extends Page {
   _renderHeader() {
     return m('header', { className: 'LinkRobinsSupport-header LinkRobinsSupport-indexHeader' }, [
       m('h1', { className: 'LinkRobinsSupport-title' }, [m('i', { className: 'fas fa-life-ring' }), ' ', this._headingTitle()]),
-      this._renderSearch(),
-    ]);
-  }
-
-  /**
-   * Search the current view by subject, reply text or ticket number. Typing
-   * reloads after a short pause rather than on every key. Gambits (such as
-   * is:closed, author:<name>, etc.) are suggested via the GambitsAutocompleteDropdown.
-   */
-  _renderSearch() {
-    const onSubmit = (value?: string) => {
-      clearTimeout(this._searchTimer);
-      const q = (typeof value === 'string' ? value : this.query).trim();
-      const currentQ = (m.route.param('q') || '').trim();
-      if (q !== currentQ) {
-        m.route.set(app.route('linkrobins-support.index', q ? { q } : {}));
-      }
-    };
-
-    const onSearchChange = (value: string) => {
-      this.query = value;
-      clearTimeout(this._searchTimer);
-      this._searchTimer = setTimeout(() => {
-        this._lastLoadedQuery = this.query;
-        this._load(true, true);
-      }, 300);
-    };
-
-    const inputNode = m('input', {
-      className: 'FormControl LinkRobinsSupport-search-input',
-      type: 'search',
-      value: this.query,
-      placeholder: trText('index.search_placeholder', 'Search tickets'),
-      'aria-label': trText('index.search_placeholder', 'Search tickets'),
-      oninput: (e: any) => {
-        onSearchChange(e.target.value);
-      },
-      onkeydown: (e: any) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          onSubmit();
-        }
-      },
-    });
-
-    return m('div', { className: 'LinkRobinsSupport-search' }, [
-      m('i', { className: 'fas fa-search LinkRobinsSupport-search-icon', 'aria-hidden': 'true' }),
-      GambitsAutocompleteDropdown
-        ? m(
-            GambitsAutocompleteDropdown,
-            {
-              resource: SUPPORT_TICKETS_RESOURCE,
-              query: this.query,
-              onchange: onSearchChange,
-            },
-            inputNode
-          )
-        : inputNode,
     ]);
   }
 
@@ -274,14 +217,46 @@ export default class SupportIndexPage extends Page {
       return m('div', { className: 'LinkRobinsSupport-empty' }, tr('errors.load_tickets', 'Could not load tickets.'));
     }
     if (!this.tickets.length) {
+      const q = this.query.trim();
+      let emptyMessage: any;
+      let isCustomSearch = false;
+
+      if (!q || q === 'is:mine') {
+        emptyMessage = canCreateSupportTicket()
+          ? tr('index.empty_own', 'No tickets yet. Click "New ticket" to open one.')
+          : tr('index.empty_no_create', 'No tickets yet.');
+      } else if (q === 'is:open') {
+        emptyMessage = tr('index.empty_status.open', 'No open tickets.');
+      } else if (q === 'assigned:me -is:closed') {
+        emptyMessage = tr('index.empty_assigned_to_me', 'No open tickets are assigned to you.');
+      } else if (q === 'is:unassigned -is:closed') {
+        emptyMessage = tr('index.empty_unassigned', 'Every open ticket has been claimed.');
+      } else if (q === 'is:closed') {
+        emptyMessage = tr('index.empty_status.closed', 'No closed tickets.');
+      } else {
+        emptyMessage = tr('index.no_results', 'No tickets match your search.');
+        isCustomSearch = true;
+      }
+
       return m(
         'div',
         { className: 'LinkRobinsSupport-empty' },
-        this.query.trim()
-          ? tr('index.no_results', 'No tickets match your search.')
-          : canCreateSupportTicket()
-            ? tr('index.empty', 'No tickets yet. Need help? Open one below.')
-            : tr('index.empty_no_create', 'No tickets yet.')
+        isCustomSearch
+          ? [
+              m('p', emptyMessage),
+              m(
+                Button,
+                {
+                  className: 'Button Button--link',
+                  onclick: () => {
+                    app.search.state.clear();
+                    m.route.set(app.route('linkrobins-support.index'));
+                  },
+                },
+                tr('index.reset_search', 'Clear search')
+              ),
+            ]
+          : emptyMessage
       );
     }
     return [

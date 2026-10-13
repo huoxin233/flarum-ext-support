@@ -182,6 +182,10 @@ linkrobins-support:
       assigned_to: 'Assigned to {name}'
       untitled: 'Untitled'
       deleted_badge: 'Deleted'
+      tickets: 'Tickets'
+      search_tickets_title: 'Search tickets'
+      search_all_tickets: 'View all tickets matching "{query}"'
+      reset_search: 'Clear search'
     assign:
       title: 'Assign ticket'
       load_failed: 'Could not load the support team.'
