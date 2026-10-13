@@ -6,6 +6,7 @@ import ItemList from 'flarum/common/utils/ItemList';
 import extractText from 'flarum/common/utils/extractText';
 import { tr } from './utils/translate';
 import { canHandleSupportTickets } from './utils/permissions';
+import { SUPPORT_TICKETS_RESOURCE } from './query/ticketGambits';
 import SupportTicketsSearchSource from './query/SupportTicketsSearchSource';
 import type { GlobalSearchSource } from 'flarum/common/components/AbstractGlobalSearch';
 
@@ -39,6 +40,15 @@ export default function addSupportSearch() {
     return original();
   });
 
+  // Automatically select support tickets source when on support routes
+  override('flarum/common/components/SearchModal' as any, 'defaultActiveSource', function (original: any) {
+    const orig = original();
+    if (!orig && app.current.get('routeName')?.startsWith('linkrobins-support.')) {
+      return SUPPORT_TICKETS_RESOURCE;
+    }
+    return orig;
+  });
+
   // Customize lazy-loaded SearchModal when invoked on support desk routes
   override('flarum/common/components/SearchModal' as any, 'title', function (original: any) {
     if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
@@ -57,6 +67,23 @@ export default function addSupportSearch() {
   extend('flarum/common/components/SearchModal' as any, 'selectResult', function () {
     if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
       app.modal.close();
+    }
+  });
+
+  // Populate default filters for support tickets on modal initialization
+  extend('flarum/common/components/SearchModal' as any, 'defaultFilters', function (this: any, filters: any) {
+    if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
+      filters[SUPPORT_TICKETS_RESOURCE] ||= {};
+      const routeName = app.current.get('routeName');
+      if (routeName === 'linkrobins-support.show') {
+        const ticketId = m.route.param('id');
+        const ticket = app.current.get('ticket') || (ticketId ? app.store.getById('linkrobins-support-tickets', ticketId) : null);
+        const cat = ticket && typeof ticket.category === 'function' ? ticket.category() : null;
+        const slug = cat && typeof cat.slug === 'function' ? cat.slug() : null;
+        if (slug) {
+          filters[SUPPORT_TICKETS_RESOURCE].category = slug;
+        }
+      }
     }
   });
 
