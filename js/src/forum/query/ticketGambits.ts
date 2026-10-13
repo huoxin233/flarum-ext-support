@@ -244,13 +244,13 @@ export class PriorityGambit extends KeyValueGambit {
   }
 
   pattern(): string {
-    return `${this.key()}:(urgent|normal|low)`;
+    return `${this.key()}:(urgent|normal|low|Urgent|Normal|Low)`;
   }
 
   toFilter(matches: string[], negate: boolean): Record<string, any> {
     const key = (negate ? '-' : '') + this.filterKey();
     return {
-      [key]: matches[1],
+      [key]: matches[1].toLowerCase(),
     };
   }
 
@@ -284,7 +284,7 @@ export class CategoryGambit extends KeyValueGambit {
 
   pattern(): string {
     const key = this.key();
-    return `(?:${key}|cat):([a-z0-9_-]+)`;
+    return `(?:${key}|cat):([a-zA-Z0-9_-]+)`;
   }
 
   toFilter(matches: string[], negate: boolean): Record<string, any> {

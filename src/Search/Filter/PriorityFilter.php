@@ -30,7 +30,7 @@ class PriorityFilter implements FilterInterface
             return;
         }
 
-        $values = $this->asStringArray($value);
+        $values = array_map('strtolower', $this->asStringArray($value));
         $valid = array_values(array_intersect($values, SupportTicket::ALL_PRIORITIES));
         if (empty($valid)) {
             return;

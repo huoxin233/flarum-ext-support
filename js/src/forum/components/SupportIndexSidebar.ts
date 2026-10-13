@@ -80,15 +80,15 @@ export default class SupportIndexSidebar extends IndexSidebar {
       items.add('linkrobinsSupportSeparator', m(Separator), -20);
     }
 
-    // Member view: My tickets
+    // Member view: My tickets (for staff, narrows explicitly to own tickets)
     items.add(
       'support-mine',
       m(
         LinkButton,
         {
-          href: app.route('linkrobins-support.index'),
+          href: app.route('linkrobins-support.index', canHandle ? { q: 'is:mine' } : {}),
           icon: 'fas fa-user',
-          active: !q || q === 'is:mine',
+          active: canHandle ? q === 'is:mine' : !q || q === 'is:mine',
         },
         [tr('index.my_tickets', 'My tickets'), this._count('mine')]
       ),

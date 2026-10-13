@@ -22,7 +22,7 @@ class StatusFilter implements FilterInterface
 
     public function filter(SearchState $state, string|array $value, bool $negate): void
     {
-        $values = $this->asStringArray($value);
+        $values = array_map('strtolower', $this->asStringArray($value));
         $valid  = array_values(array_intersect($values, SupportTicket::ALL_STATUSES));
         if (empty($valid)) {
             return;

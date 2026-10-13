@@ -72,6 +72,7 @@ export default class SupportIndexPage extends Page {
   onbeforeupdate(vnode: any) {
     const nextQuery = this._queryFromAttrs(vnode.attrs);
     if (nextQuery !== this._lastLoadedQuery) {
+      clearTimeout(this._searchTimer);
       this.query = nextQuery;
       this._lastLoadedQuery = nextQuery;
       Promise.resolve().then(() => this._load());
@@ -211,6 +212,7 @@ export default class SupportIndexPage extends Page {
    */
   _renderSearch() {
     const onSubmit = (value?: string) => {
+      clearTimeout(this._searchTimer);
       const q = (typeof value === 'string' ? value : this.query).trim();
       const currentQ = (m.route.param('q') || '').trim();
       if (q !== currentQ) {

@@ -240,4 +240,16 @@ class SearchTicketsTest extends TestCase
         // Member filter is ignored; user 2 still gets all their own tickets
         $this->assertEquals([1, 2, 3], $ids);
     }
+
+    #[Test]
+    public function staff_priority_filter_is_case_insensitive(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['priority' => 'Urgent']])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        $this->assertEquals([1], $ids);
+    }
 }
