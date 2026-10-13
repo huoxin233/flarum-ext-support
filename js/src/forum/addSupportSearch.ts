@@ -25,16 +25,13 @@ export default function addSupportSearch() {
     return original();
   });
 
-  // Scope active search queries in header to custom ticket searches only
+  // Scope active search queries in header to the dedicated search page only
   override(GlobalSearchState.prototype, 'getInitialSearch', function (original) {
-    if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
+    if (app.current.get('routeName') === 'linkrobins-support.search') {
       const q = m.route.param('q');
-      if (typeof q === 'string' && q.trim()) {
-        const trimmed = q.trim();
-        if (!STANDARD_QUEUES.includes(trimmed)) {
-          return trimmed;
-        }
-      }
+      return (typeof q === 'string' && q.trim()) || '';
+    }
+    if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
       return '';
     }
     return original();
@@ -90,27 +87,28 @@ export default function addSupportSearch() {
   // Pre-fill gambits according to the active support desk view/page
   override('flarum/common/components/SearchModal' as any, 'prefill', function (this: any, original: any, value: string) {
     if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
-      if (value && value.trim()) {
-        return value.trim();
+      const routeName = app.current.get('routeName');
+
+      if (routeName === 'linkrobins-support.search') {
+        const qParam = m.route.param('q');
+        return (typeof qParam === 'string' && qParam.trim()) || value || '';
       }
 
-      const routeName = app.current.get('routeName');
-      if (routeName === 'linkrobins-support.index') {
-        const qParam = m.route.param('q');
-        if (typeof qParam === 'string' && qParam.trim()) {
-          return qParam.trim();
-        }
+      const trimmed = value && value.trim();
+      if (trimmed && !STANDARD_QUEUES.includes(trimmed)) {
+        return trimmed;
+      }
 
-        const pageQuery = app.current.get('query');
-        if (typeof pageQuery === 'string' && pageQuery.trim()) {
-          return pageQuery.trim();
+      if (routeName === 'linkrobins-support.index') {
+        const currentQueue = (m.route.param('q') || app.current.get('query') || '').trim();
+        if (currentQueue) {
+          return currentQueue;
         }
 
         if (canHandleSupportTickets()) {
           const pref = app.session?.user?.preferences()?.linkrobinsSupportStaffDefaultView;
           return typeof pref === 'string' && pref.trim() ? pref.trim() : 'is:open';
         }
-
         return 'is:mine';
       }
 
@@ -135,37 +133,41 @@ export default function addSupportSearch() {
     return original(value);
   });
 
-  // Prepare input with trailing space and cursor positioned at end when modal is ready
-  extend('flarum/common/components/SearchModal' as any, 'onready', function (this: any) {
+  // Track initial query on modal initialization to detect user modifications
+  extend('flarum/common/components/SearchModal' as any, 'oninit', function (this: any) {
     if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
-      const input = this.inputElement && this.inputElement()[0];
+      this._supportInitialQuery = this.query && this.query();
+    }
+  });
+
+  // Prepare input with trailing space, end cursor position, and trigger search on mount
+  extend('flarum/common/components/SearchModal' as any, 'oncreate', function (this: any) {
+    if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
       const q = this.query && this.query();
-      if (input && q && q.trim()) {
-        const val = q.trim() + ' ';
+      if (q && q.trim()) {
+        const val = q.endsWith(' ') ? q : q.trim() + ' ';
         this.query(val);
-        input.value = val;
-        try {
-          input.setSelectionRange(val.length, val.length);
-        } catch (e) {}
+        const input = this.inputElement && this.inputElement()[0];
+        if (input) {
+          input.value = val;
+          try {
+            input.focus();
+            input.setSelectionRange(val.length, val.length);
+          } catch (e) {}
+        }
         this.search(val.trim());
       }
     }
   });
 
-  // Trigger results search on modal mount if query was prefilled
-  extend('flarum/common/components/SearchModal' as any, 'oncreate', function (this: any) {
-    if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
+  // Reset header search state when dismissed on non-search pages
+  extend('flarum/common/components/SearchModal' as any, 'onremove', function (this: any) {
+    const routeName = app.current.get('routeName');
+    if (routeName?.startsWith('linkrobins-support.') && routeName !== 'linkrobins-support.search') {
       const q = this.query && this.query();
-      if (q && q.trim()) {
-        this.search(q.trim());
+      if (!q?.trim() || q.trim() === this._supportInitialQuery?.trim()) {
+        app.search.state.setValue('');
       }
-    }
-  });
-
-  // Reset header search state to initial search if modal is closed without submitting
-  extend('flarum/common/components/SearchModal' as any, 'onremove', function () {
-    if (app.current.get('routeName')?.startsWith('linkrobins-support.')) {
-      app.search.state.setValue(app.search.state.getInitialSearch());
     }
   });
 }

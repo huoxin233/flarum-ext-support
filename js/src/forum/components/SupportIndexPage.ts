@@ -1,35 +1,29 @@
 import Page from 'flarum/common/components/Page';
 import LoadingIndicator from 'flarum/common/components/LoadingIndicator';
-import Avatar from 'flarum/common/components/Avatar';
 import Button from 'flarum/common/components/Button';
 import PageStructure from 'flarum/forum/components/PageStructure';
 import SupportIndexSidebar from './SupportIndexSidebar';
-import Link from 'flarum/common/components/Link';
+import SupportTicketRow from './SupportTicketRow';
 import { tr, trText } from '../utils/translate';
-import { formatDate, showError } from '../utils/helpers';
+import { showError } from '../utils/helpers';
 import { canCreateSupportTicket, canHandleSupportTickets } from '../utils/permissions';
-import { statusChip, priorityChip } from '../utils/status';
 import { loadTickets } from '../utils/api';
 import { onLive } from '../utils/live';
-import ItemList from 'flarum/common/utils/ItemList';
-import { ticketTypes } from '../../common/ticketTypes';
 import { SUPPORT_TICKETS_RESOURCE, registerTicketGambits } from '../query/ticketGambits';
 
 const PAGE_SIZE = 25;
 
 export default class SupportIndexPage extends Page {
-  static providesInitialSearch = true;
   loading = true;
   error: any = null;
   tickets: any[] = [];
   // Lists load a page at a time; "Load more" fetches the next one.
   hasMore = false;
   loadingMore = false;
-  // Unified query string: single source of truth for both search and queue views.
+  // Unified query string representing the active triage work queue.
   query = '';
   _lastLoadedQuery = '';
-  // Each load gets a number; a response that is not the latest is dropped,
-  // so a slow reply for "ava" cannot overwrite the results for "avatar".
+  // Each load gets a number; a response that is not the latest is dropped.
   _loadSeq = 0;
   _stopLive: (() => void) | null = null;
   _liveTimer: any = null;
@@ -43,7 +37,6 @@ export default class SupportIndexPage extends Page {
     this.query = this._queryFromAttrs(this.attrs);
     this._lastLoadedQuery = this.query;
     app.current.set('query', this.query);
-    app.search.state.setValue(app.search.state.getInitialSearch());
     try {
       app.setTitle(tr('nav', 'Support'));
     } catch (e) {}
@@ -54,8 +47,7 @@ export default class SupportIndexPage extends Page {
   oncreate(vnode: any) {
     super.oncreate(vnode);
     // A ticket opened or moved somewhere: refetch the list in place so new
-    // tickets appear and moved ones leave this view. Debounced, since one
-    // action can produce a few pushes in a row (a reply, then its status).
+    // tickets appear and moved ones leave this view. Debounced.
     this._stopLive = onLive((kind) => {
       if (kind !== 'ticket') return;
       clearTimeout(this._liveTimer);
@@ -67,7 +59,6 @@ export default class SupportIndexPage extends Page {
     if (this._stopLive) this._stopLive();
     this._stopLive = null;
     clearTimeout(this._liveTimer);
-    app.search.state.clear();
     app.current.set('query', null);
     super.onremove(vnode);
   }
@@ -78,7 +69,6 @@ export default class SupportIndexPage extends Page {
       this.query = nextQuery;
       this._lastLoadedQuery = nextQuery;
       app.current.set('query', nextQuery);
-      app.search.state.setValue(app.search.state.getInitialSearch());
       Promise.resolve().then(() => this._load());
     }
     return true;
@@ -93,7 +83,7 @@ export default class SupportIndexPage extends Page {
       const pref = app.session?.user?.preferences()?.linkrobinsSupportStaffDefaultView;
       return typeof pref === 'string' && pref.trim() ? pref.trim() : 'is:open';
     }
-    return '';
+    return 'is:mine';
   }
 
   _headingTitle(): any {
@@ -222,7 +212,6 @@ export default class SupportIndexPage extends Page {
     if (!this.tickets.length) {
       const q = this.query.trim();
       let emptyMessage: any;
-      let isCustomSearch = false;
 
       if (!q || q === 'is:mine') {
         emptyMessage = canCreateSupportTicket()
@@ -237,40 +226,19 @@ export default class SupportIndexPage extends Page {
       } else if (q === 'is:closed') {
         emptyMessage = tr('index.empty_status.closed', 'No closed tickets.');
       } else {
-        emptyMessage = tr('index.no_results', 'No tickets match your search.');
-        isCustomSearch = true;
+        emptyMessage = tr('index.empty', 'No tickets to show.');
       }
 
-      return m(
-        'div',
-        { className: 'LinkRobinsSupport-empty' },
-        isCustomSearch
-          ? [
-              m('p', emptyMessage),
-              m(
-                Button,
-                {
-                  className: 'Button Button--link',
-                  onclick: () => {
-                    app.search.state.clear();
-                    m.route.set(app.route('linkrobins-support.index'));
-                  },
-                },
-                tr('index.reset_search', 'Clear search')
-              ),
-            ]
-          : emptyMessage
-      );
+      return m('div', { className: 'LinkRobinsSupport-empty' }, emptyMessage);
     }
     return [
       m(
         'div',
         { className: 'LinkRobinsSupport-list' },
-        this.tickets.map((t: any) => this._renderRow(t))
+        this.tickets.map((t: any) => m(SupportTicketRow, { ticket: t, key: 'ticket-' + t.id() }))
       ),
-      // Exactly how core's discussion list does it: its container class (so
-      // core's styling applies), a plain button with core's own "Load More"
-      // wording, swapped for a spinner while the next page loads.
+      // Exactly how core's discussion list does it: its container class,
+      // a plain button with core's own "Load More" wording swapped for spinner while loading.
       this.hasMore || this.loadingMore
         ? m(
             'div',
@@ -285,87 +253,5 @@ export default class SupportIndexPage extends Page {
           )
         : null,
     ];
-  }
-
-  /**
-   * Who has the ticket, for staff scanning the queue, as a chip under the
-   * status: their avatar and name, or "Unassigned". It sits apart from the
-   * meta line so it is never mistaken for the person who opened the ticket.
-   * Members see only their own tickets and do not need routing detail.
-   */
-  _renderAssignee(ticket: any) {
-    if (!canHandleSupportTickets()) return null;
-    const assignee = ticket.assignedStaff && ticket.assignedStaff();
-    if (!assignee) {
-      return m('span', { className: 'LinkRobinsSupport-chip LinkRobinsSupport-chip--assignee is-unassigned' }, [
-        m('i', { className: 'fas fa-user-slash', 'aria-hidden': 'true' }),
-        tr('index.unassigned', 'Unassigned'),
-      ]);
-    }
-    const name = assignee.displayName() || assignee.username();
-    return m(
-      'span',
-      { className: 'LinkRobinsSupport-chip LinkRobinsSupport-chip--assignee', title: trText('index.assigned_to', 'Assigned to {name}', { name }) },
-      [m(Avatar, { user: assignee }), name]
-    );
-  }
-
-  badgeItems(ticket: any): ItemList<any> {
-    const items = new ItemList<any>();
-    const cat = ticket.category && ticket.category();
-    if (cat) {
-      const driver = ticketTypes.forCategory(cat);
-      if (driver && driver.badgeItems) {
-        driver.badgeItems(items, ticket);
-      }
-    }
-    return items;
-  }
-
-  _renderRow(ticket: any) {
-    const user = ticket.user && ticket.user();
-    const cat = ticket.category && ticket.category();
-    const isDeleted = !!(ticket.isDeleted && ticket.isDeleted());
-    const isUnread = !!(ticket.isUnread && ticket.isUnread());
-
-    return m(
-      Link,
-      {
-        href: app.route('linkrobins-support.show', { id: ticket.id() }),
-        className: 'LinkRobinsSupport-row' + (isDeleted ? ' LinkRobinsSupport-row--deleted' : '') + (isUnread ? ' is-unread' : ''),
-        key: 'ticket-' + ticket.id(),
-      },
-      [
-        m('div', { className: 'LinkRobinsSupport-row-main' }, [
-          m('div', { className: 'LinkRobinsSupport-row-subject' }, [
-            isUnread
-              ? m('span', {
-                  className: 'LinkRobinsSupport-unreadDot',
-                  title: trText('index.unread', 'New replies'),
-                  'aria-label': trText('index.unread', 'New replies'),
-                })
-              : null,
-            ticket.subject() || tr('index.untitled', 'Untitled'),
-            isDeleted ? m('span', { className: 'LinkRobinsSupport-row-deletedBadge' }, tr('index.deleted_badge', 'Deleted')) : null,
-          ]),
-          m('div', { className: 'LinkRobinsSupport-row-meta' }, [
-            cat
-              ? m('span', { className: 'LinkRobinsSupport-row-cat' }, [
-                  m('span', { className: 'LinkRobinsSupport-chip-dot', style: { background: cat.color() || 'var(--muted-color)' } }),
-                  cat.name(),
-                ])
-              : null,
-            user ? m('span', { className: 'LinkRobinsSupport-row-user' }, user.displayName() || user.username()) : null,
-            m('span', { className: 'LinkRobinsSupport-row-date' }, formatDate(ticket.lastReplyAt() || ticket.createdAt())),
-          ]),
-        ]),
-        m('div', { className: 'LinkRobinsSupport-row-side' }, [
-          canHandleSupportTickets() ? priorityChip(ticket.priority && ticket.priority()) : null,
-          this.badgeItems(ticket).toArray(),
-          statusChip(ticket.status()),
-          this._renderAssignee(ticket),
-        ]),
-      ]
-    );
   }
 }

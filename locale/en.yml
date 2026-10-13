@@ -185,6 +185,11 @@ linkrobins-support:
       tickets: 'Tickets'
       search_tickets_title: 'Search tickets'
       search_all_tickets: 'View all tickets matching "{query}"'
+      search_results_title: 'Search results for "{query}"'
+      back_to_desk: 'Back to support'
+      back_to_desk_tooltip: 'Return to support tickets'
+      tickets_found: '{count} ticket found'
+      tickets_found_plural: '{count} tickets found'
       reset_search: 'Clear search'
     assign:
       title: 'Assign ticket'

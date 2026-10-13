@@ -75,6 +75,8 @@ export default class SupportIndexSidebar extends IndexSidebar {
   navItems() {
     const items = showForumNavOnSupportPages() ? this.forumNavItems() : new ItemList();
     const canHandle = canHandleSupportTickets();
+    const isSearch = app.current.get('routeName') === 'linkrobins-support.search';
+    const isIndex = app.current.get('routeName') === 'linkrobins-support.index';
     const q = (this.attrs && typeof this.attrs.query === 'string' ? this.attrs.query : '').trim();
 
     if (showForumNavOnSupportPages()) {
@@ -89,7 +91,7 @@ export default class SupportIndexSidebar extends IndexSidebar {
         {
           href: app.route('linkrobins-support.index', canHandle ? { q: 'is:mine' } : {}),
           icon: 'fas fa-user',
-          active: canHandle ? q === 'is:mine' : !q || q === 'is:mine',
+          active: isIndex && (canHandle ? q === 'is:mine' : !q || q === 'is:mine'),
         },
         [tr('index.my_tickets', 'My tickets'), this._count('mine')]
       ),
@@ -105,7 +107,7 @@ export default class SupportIndexSidebar extends IndexSidebar {
           {
             href: app.route('linkrobins-support.index', { q: 'is:open' }),
             icon: 'fas fa-circle',
-            active: q === 'is:open',
+            active: isIndex && q === 'is:open',
           },
           [tr('status.open', 'Open'), this._count('open')]
         ),
@@ -119,7 +121,7 @@ export default class SupportIndexSidebar extends IndexSidebar {
           {
             href: app.route('linkrobins-support.index', { q: 'assigned:me -is:closed' }),
             icon: 'fas fa-user-check',
-            active: q === 'assigned:me -is:closed',
+            active: isIndex && q === 'assigned:me -is:closed',
           },
           [tr('index.filter_assigned_to_me', 'Assigned to me'), this._count('assigned_to_me')]
         ),
@@ -133,7 +135,7 @@ export default class SupportIndexSidebar extends IndexSidebar {
           {
             href: app.route('linkrobins-support.index', { q: 'is:unassigned -is:closed' }),
             icon: 'fas fa-user-slash',
-            active: q === 'is:unassigned -is:closed',
+            active: isIndex && q === 'is:unassigned -is:closed',
           },
           [tr('index.filter_unassigned', 'Unassigned'), this._count('unassigned')]
         ),
@@ -147,7 +149,7 @@ export default class SupportIndexSidebar extends IndexSidebar {
           {
             href: app.route('linkrobins-support.index', { q: 'is:closed' }),
             icon: 'fas fa-times-circle',
-            active: q === 'is:closed',
+            active: isIndex && q === 'is:closed',
           },
           [tr('status.closed', 'Closed')]
         ),
@@ -173,6 +175,9 @@ export default class SupportIndexSidebar extends IndexSidebar {
   }
 
   _currentLabel(): string {
+    if (app.current.get('routeName') === 'linkrobins-support.search') {
+      return tr('index.search_tickets_title', 'Search tickets');
+    }
     const q = (this.attrs && typeof this.attrs.query === 'string' ? this.attrs.query : '').trim();
     if (!q || q === 'is:mine') return tr('index.my_tickets', 'My tickets');
     if (q === 'is:open') return tr('status.open', 'Open');
