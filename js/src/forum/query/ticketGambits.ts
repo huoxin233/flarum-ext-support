@@ -69,72 +69,13 @@ export class StatusGambit implements IGambit<GambitType.Grouped> {
   }
 }
 
-/**
- * Filter tickets by claim status: is:assigned, is:unassigned (staff only).
- */
-export class AssignedGroupedGambit implements IGambit<GambitType.Grouped> {
-  type = GambitType.Grouped;
-  predicates = false;
-
-  key(): string[] {
-    return ['unassigned', 'assigned'];
-  }
-
-  filterKey(): string {
-    return 'assigned';
-  }
-
-  booleanKey(): 'is' | 'has' | 'allows' {
-    return 'is';
-  }
-
-  groupKey(): string {
-    return (app.translator && app.translator.trans('core.lib.gambits.group_keys.' + this.booleanKey(), {}, true)) || 'is';
-  }
-
-  pattern(): string {
-    const is = this.groupKey();
-    return `${is}:(unassigned|assigned)`;
-  }
-
-  toFilter(matches: string[], negate: boolean): Record<string, any> {
-    const key = (negate ? '-' : '') + this.filterKey();
-    const val = matches[1] === 'unassigned' ? 'none' : 'assigned';
-    return {
-      [key]: val,
-    };
-  }
-
-  fromFilter(value: any, negate: boolean): string {
-    const is = this.groupKey();
-    if (value === 'none' || value === 'unassigned') {
-      return `${negate ? '-' : ''}${is}:unassigned`;
-    }
-    if (value === 'assigned') {
-      return `${negate ? '-' : ''}${is}:assigned`;
-    }
-    return '';
-  }
-
-  suggestion(): GroupedGambitSuggestion {
-    return {
-      group: this.groupKey(),
-      key: this.key(),
-    };
-  }
-
-  enabled(): boolean {
-    return canHandleSupportTickets();
-  }
-}
-
 function safeTrans(key: string, fallback: string): string {
   const fullKey = 'linkrobins-support.lib.gambits.tickets.' + key;
   return ((app.translator as any)?.translations?.[fullKey] && app.translator.trans(fullKey, {}, true)) || fallback;
 }
 
 /**
- * Key-value assignee filter: assigned:me or assigned:none (staff only).
+ * Key-value assignee filter: assigned:me, assigned:none, assigned:unassigned (staff only).
  */
 export class AssignedGambit extends KeyValueGambit {
   key(): string {
@@ -150,13 +91,14 @@ export class AssignedGambit extends KeyValueGambit {
   }
 
   pattern(): string {
-    return `${this.key()}:(me|none)`;
+    return `${this.key()}:(me|none|unassigned)`;
   }
 
   toFilter(matches: string[], negate: boolean): Record<string, any> {
     const key = (negate ? '-' : '') + this.filterKey();
+    const val = matches[1] === 'unassigned' ? 'none' : matches[1];
     return {
-      [key]: matches[1],
+      [key]: val,
     };
   }
 
@@ -164,7 +106,7 @@ export class AssignedGambit extends KeyValueGambit {
     if (value === 'me') {
       return `${negate ? '-' : ''}${this.key()}:me`;
     }
-    if (value === 'none') {
+    if (value === 'none' || value === 'unassigned') {
       return `${negate ? '-' : ''}${this.key()}:none`;
     }
     return '';
@@ -311,31 +253,5 @@ export class CategoryGambit extends KeyValueGambit {
       return `${negate ? '-' : ''}${this.key()}:${value}`;
     }
     return '';
-  }
-}
-
-/**
- * Register support ticket gambits with Flarum's frontend GambitManager.
- * Appends without duplicate registration to preserve third-party extensibility.
- */
-export function registerTicketGambits(): void {
-  if (app.search && app.search.gambits) {
-    app.search.gambits.gambits[SUPPORT_TICKETS_RESOURCE] ||= [];
-    const registry = app.search.gambits.gambits[SUPPORT_TICKETS_RESOURCE];
-    const defaultGambits = [
-      StatusGambit,
-      AssignedGroupedGambit,
-      AssignedGambit,
-      MineGambit,
-      PriorityGambit,
-      CategoryGambit,
-      TicketTypeGambit,
-      AuthorGambit,
-    ];
-    for (const gambit of defaultGambits) {
-      if (!registry.includes(gambit)) {
-        registry.push(gambit);
-      }
-    }
   }
 }

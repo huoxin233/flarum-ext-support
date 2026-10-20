@@ -19,19 +19,39 @@ import {
   installSupportNotificationGrouping,
 } from './forum/components/notifications';
 
+import Extend from 'flarum/common/extenders';
 import { tr } from './forum/utils/translate';
 import { installRealtime } from './forum/utils/live';
 import { basePath, BASE_PATH, showNavInSidebar, showNavInAccountMenu, readForumAttribute, showError } from './forum/utils/helpers';
 import { ticketTypes, TicketTypeRegistry } from './common/ticketTypes';
 import type { TicketTypeClientDriver } from './common/ticketTypes';
-import { registerTicketGambits } from './forum/query/ticketGambits';
+import {
+  SUPPORT_TICKETS_RESOURCE,
+  StatusGambit,
+  AssignedGambit,
+  MineGambit,
+  PriorityGambit,
+  CategoryGambit,
+  TicketTypeGambit,
+  AuthorGambit,
+} from './forum/query/ticketGambits';
 import addSupportSearch from './forum/addSupportSearch';
 export { ticketTypes, TicketTypeRegistry };
 export type { TicketTypeClientDriver };
 
+export const extend = [
+  new Extend.Search()
+    .gambit(SUPPORT_TICKETS_RESOURCE, StatusGambit)
+    .gambit(SUPPORT_TICKETS_RESOURCE, AssignedGambit)
+    .gambit(SUPPORT_TICKETS_RESOURCE, MineGambit)
+    .gambit(SUPPORT_TICKETS_RESOURCE, PriorityGambit)
+    .gambit(SUPPORT_TICKETS_RESOURCE, CategoryGambit)
+    .gambit(SUPPORT_TICKETS_RESOURCE, TicketTypeGambit)
+    .gambit(SUPPORT_TICKETS_RESOURCE, AuthorGambit),
+];
+
 app.initializers.add('linkrobins-support', () => {
   (app as any).support = { ticketTypes };
-  registerTicketGambits();
   addSupportSearch();
 
   // Register the store models so app.store.find()/createRecord() return typed,

@@ -28,10 +28,11 @@ export default class SupportTicketsSearchSource implements GlobalSearchSource {
   }
 
   async search(query: string, limit: number): Promise<void> {
-    const key = query.toLowerCase().trim();
-    this.results.set(key, []);
+    const cacheKey = query.toLowerCase().trim();
+    this.results.set(cacheKey, []);
 
-    let filter: Record<string, any> = { q: key };
+    const trimmed = query.trim();
+    let filter: Record<string, any> = trimmed ? { q: trimmed } : {};
     if (app.search && app.search.gambits) {
       filter = app.search.gambits.apply(SUPPORT_TICKETS_RESOURCE, filter);
     }
@@ -46,19 +47,19 @@ export default class SupportTicketsSearchSource implements GlobalSearchSource {
 
     return loadTickets({ filter, page: { limit } })
       .then((results: any) => {
-        this.results.set(key, results || []);
+        this.results.set(cacheKey, results || []);
         m.redraw();
       })
       .catch((err: any) => {
         console.error('[linkrobins/support] search source failed:', err);
-        this.results.set(key, []);
+        this.results.set(cacheKey, []);
         m.redraw();
       });
   }
 
   view(query: string): Array<Mithril.Vnode> {
-    const key = query.toLowerCase().trim();
-    const tickets = this.results.get(key) || [];
+    const cacheKey = query.toLowerCase().trim();
+    const tickets = this.results.get(cacheKey) || [];
 
     return tickets.map((ticket: any) => {
       const cat = ticket.category && ticket.category();
@@ -108,19 +109,8 @@ export default class SupportTicketsSearchSource implements GlobalSearchSource {
     return false;
   }
 
-  fullPage(query: string): Mithril.Vnode {
-    const trimmed = query.trim();
-    return m(
-      'li',
-      m(
-        LinkButton,
-        {
-          icon: 'fas fa-search',
-          href: app.route('linkrobins-support.index', trimmed ? { q: trimmed } : {}),
-        },
-        tr('index.search_all_tickets', 'View all tickets matching "{query}"', { query: trimmed })
-      )
-    );
+  fullPage(_query: string): Mithril.Vnode | null {
+    return null;
   }
 
   gotoItem(id: string): string | null {
