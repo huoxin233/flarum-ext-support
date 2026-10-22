@@ -4,7 +4,7 @@ import Button from 'flarum/common/components/Button';
 import PageStructure from 'flarum/forum/components/PageStructure';
 import SupportIndexSidebar from './SupportIndexSidebar';
 import SupportTicketRow from './SupportTicketRow';
-import { tr } from '../utils/translate';
+import { tr, trText } from '../utils/translate';
 import { showError } from '../utils/helpers';
 import { canCreateSupportTicket, canHandleSupportTickets } from '../utils/permissions';
 import { FILTER_OPTIONS, filterLabel, emptyLabel } from '../utils/status';
