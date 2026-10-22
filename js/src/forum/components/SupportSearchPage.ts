@@ -9,7 +9,7 @@ import { tr, trText } from '../utils/translate';
 import { showError } from '../utils/helpers';
 import { canHandleSupportTickets } from '../utils/permissions';
 import { loadTickets } from '../utils/api';
-import { SUPPORT_TICKETS_RESOURCE, registerTicketGambits } from '../query/ticketGambits';
+import { SUPPORT_TICKETS_RESOURCE } from '../query/ticketGambits';
 
 const PAGE_SIZE = 25;
 
@@ -26,7 +26,6 @@ export default class SupportSearchPage extends Page {
 
   oninit(vnode: any) {
     super.oninit(vnode);
-    registerTicketGambits();
     this.loading = true;
     this.error = null;
     this.tickets = [];
