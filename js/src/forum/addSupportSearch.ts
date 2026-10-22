@@ -35,10 +35,6 @@ export default function addSupportSearch() {
         if (status && status !== 'all') {
           filters[SUPPORT_TICKETS_RESOURCE].status = status;
         }
-      } else if (routeName === 'linkrobins-support.index') {
-        if (canHandleSupportTickets()) {
-          filters[SUPPORT_TICKETS_RESOURCE].status = 'open';
-        }
       } else if (routeName === 'linkrobins-support.show') {
         const ticketId = m.route.param('id');
         const ticket = app.current.get('ticket') || (ticketId ? app.store.getById('linkrobins-support-tickets', ticketId) : null);
