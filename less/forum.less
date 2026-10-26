@@ -104,10 +104,28 @@
         display: block;
         margin-right: 0;
     }
+
+}
+
+// Internal note and Saved replies, side by side in one header row.
+.LinkRobinsSupport-composerTools {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+
+    .LinkRobinsSupport-internalToggle {
+        margin-right: 0;
+    }
+
+    .LinkRobinsSupport-savedRepliesToggle {
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
 }
 
 .ComposerBody-header .LinkRobinsSupport-internalToggle {
-    margin: 4px 0 0;
+    margin: 0;
 }
 
 // "Write a reply" prompt button at the foot of a ticket.
