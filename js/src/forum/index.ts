@@ -1,3 +1,4 @@
+import app from 'flarum/forum/app';
 import { extend } from 'flarum/common/extend';
 import IndexSidebar from 'flarum/forum/components/IndexSidebar';
 import UserControls from 'flarum/forum/utils/UserControls';
@@ -14,7 +15,7 @@ import addSupportSearch from './addSupportSearch';
 export { default as extend } from './extend';
 
 app.initializers.add('linkrobins-support', () => {
-  (app as any).support = { ticketTypes };
+  app.support = { ticketTypes };
   addSupportSearch();
 
   // Group support notifications under a translatable "Support" heading in the
