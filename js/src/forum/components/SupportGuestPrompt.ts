@@ -1,8 +1,9 @@
+import app from 'flarum/forum/app';
 import Component from 'flarum/common/Component';
 import Button from 'flarum/common/components/Button';
 import LogInModal from 'flarum/forum/components/LogInModal';
 import SignUpModal from 'flarum/forum/components/SignUpModal';
-import { tr, trText } from '../utils/translate';
+import extractText from 'flarum/common/utils/extractText';
 
 /**
  * What a logged-out visitor sees on any support page, in place of a list or a
@@ -13,10 +14,20 @@ export default class SupportGuestPrompt extends Component<{ message?: string }> 
   view() {
     const canSignUp = !!(app.forum && app.forum.attribute('allowSignUp'));
     return m('div', { className: 'LinkRobinsSupport-empty LinkRobinsSupport-guest' }, [
-      m('p', { className: 'LinkRobinsSupport-guestText' }, this.attrs.message || tr('guest.message', 'Sign in to see your tickets.')),
+      m('p', { className: 'LinkRobinsSupport-guestText' }, this.attrs.message || app.translator.trans('linkrobins-support.forum.guest.message')),
       m('div', { className: 'LinkRobinsSupport-guestActions' }, [
-        m(Button, { className: 'Button Button--primary', onclick: () => app.modal.show(LogInModal) }, trText('guest.log_in', 'Log In')),
-        canSignUp ? m(Button, { className: 'Button', onclick: () => app.modal.show(SignUpModal) }, trText('guest.sign_up', 'Sign Up')) : null,
+        m(
+          Button,
+          { className: 'Button Button--primary', onclick: () => app.modal.show(LogInModal) },
+          extractText(app.translator.trans('linkrobins-support.forum.guest.log_in'))
+        ),
+        canSignUp
+          ? m(
+              Button,
+              { className: 'Button', onclick: () => app.modal.show(SignUpModal) },
+              extractText(app.translator.trans('linkrobins-support.forum.guest.sign_up'))
+            )
+          : null,
       ]),
     ]);
   }
