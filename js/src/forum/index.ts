@@ -9,6 +9,7 @@ import { installSupportNotificationGrouping } from './components/notifications';
 import { tr } from './utils/translate';
 import { installRealtime } from './utils/live';
 import { basePath, BASE_PATH, showNavInSidebar, showNavInAccountMenu, readForumAttribute, showError } from './utils/helpers';
+import { clearTargetOnModalClose } from './utils/guestAction';
 import { ticketTypes } from '../common/ticketTypes';
 import addSupportSearch from './addSupportSearch';
 
@@ -17,6 +18,11 @@ export { default as extend } from './extend';
 app.initializers.add('linkrobins-support', () => {
   app.support = { ticketTypes };
   addSupportSearch();
+
+  // A guest sent to the log-in modal by a support action carries a target
+  // through the post-login reload. Closing the modal without logging in
+  // drops it, so it can never redirect anyone later.
+  clearTargetOnModalClose();
 
   // Group support notifications under a translatable "Support" heading in the
   // notifications dropdown, instead of the generic forum-title group.
