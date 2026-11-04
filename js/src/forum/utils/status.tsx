@@ -1,7 +1,6 @@
 import app from 'flarum/forum/app';
 import extractText from 'flarum/common/utils/extractText';
 import Icon from 'flarum/common/components/Icon';
-import { basePath, BASE_PATH } from './helpers';
 
 /**
  * Resolve a status label at RENDER time. Building this as a static map at
@@ -112,7 +111,7 @@ export function filterLabel(opt: FilterOption): string {
 }
 
 export function filterHrefFor(id: string): string {
-  return basePath() + BASE_PATH + '/status/' + id;
+  return app.route('linkrobins-support.filtered', { status: id });
 }
 
 /**

@@ -108,7 +108,7 @@ export function userLink(user: User | null | undefined): any {
   const username = user.username && user.username();
   const label = (user.displayName && user.displayName()) || username || '';
   if (!username) return label;
-  const href = basePath() + '/u/' + encodeURIComponent(username);
+  const href = app.route.user(user);
   return Link.component({ href }, label);
 }
 
