@@ -11,7 +11,6 @@ import SupportIndexSidebar from './SupportIndexSidebar';
 import TicketHeader from './TicketHeader';
 import ReplyItem from './ReplyItem';
 import TicketEventItem from './TicketEventItem';
-import SavedRepliesMenu from './SavedRepliesMenu';
 import ReplyComposer from './ReplyComposer';
 import SupportGuestPrompt from './SupportGuestPrompt';
 import { showError, pushSupportHistory, isGuest } from '../utils/helpers';
@@ -828,48 +827,23 @@ export default class SupportShowPage extends Page<any> {
     const subject = ticket.subject() || '';
     openSupportComposer({
       supportContext: 'reply:' + ticket.id(),
+      canPostInternal,
       className: 'LinkRobinsSupport-replyComposer',
       placeholder: extractText(app.translator.trans('linkrobins-support.forum.reply.placeholder')),
       submitLabel: extractText(app.translator.trans('linkrobins-support.forum.reply.post_reply')),
       confirmExit: extractText(app.translator.trans('linkrobins-support.forum.reply.discard_confirm')),
       originalContent: '',
-      supportHeaderItems: (body: any) => {
-        const rows: any[] = [
-          {
-            name: 'title',
-            priority: 10,
-            content: (
-              <h3 className="LinkRobinsSupport-composerTitle">
-                <Icon name="fas fa-reply" /> {subject}
-              </h3>
-            ),
-          },
-        ];
-        if (canPostInternal) {
-          // One row for the staff controls, on every screen size: on a phone
-          // core gives each header item its own bordered row, so two items
-          // would stack.
-          rows.push({
-            name: 'staffTools',
-            content: (
-              <div className="LinkRobinsSupport-composerTools">
-                <label className="LinkRobinsSupport-internalToggle">
-                  <input
-                    type="checkbox"
-                    checked={!!body._supportInternal}
-                    onchange={(e: any) => {
-                      body._supportInternal = !!e.target.checked;
-                    }}
-                  />{' '}
-                  {app.translator.trans('linkrobins-support.forum.reply.internal_note')}
-                </label>
-                <SavedRepliesMenu />
-              </div>
-            ),
-          });
-        }
-        return rows;
-      },
+      supportHeaderItems: () => [
+        {
+          name: 'title',
+          priority: 10,
+          content: (
+            <h3 className="LinkRobinsSupport-composerTitle">
+              <Icon name="fas fa-reply" /> {subject}
+            </h3>
+          ),
+        },
+      ],
       onSupportSubmit: (content: string, body: any) => {
         this._postReply(content, !!body._supportInternal, body);
       },
