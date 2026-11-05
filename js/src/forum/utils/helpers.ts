@@ -72,19 +72,6 @@ export function formatDate(value: Date | string | null | undefined): string {
   }
 }
 
-export function safeNavigate(href: string, ev?: any): void {
-  if (ev && (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button === 1)) return;
-  if (typeof href !== 'string' || href === '') return;
-  const base = basePath();
-  let path = href;
-  if (base && href.indexOf(base) === 0) path = href.slice(base.length);
-  if (path.charAt(0) !== '/') return;
-  if (ev) ev.preventDefault();
-  try {
-    m.route.set(path);
-  } catch (e) {}
-}
-
 export function showError(message: any): void {
   try {
     if (app && app.alerts && typeof app.alerts.show === 'function') {
