@@ -8,7 +8,7 @@ import PageStructure from 'flarum/forum/components/PageStructure';
 import extractText from 'flarum/common/utils/extractText';
 import SupportIndexSidebar from './SupportIndexSidebar';
 import SupportGuestPrompt from './SupportGuestPrompt';
-import { BASE_PATH, showError, pushSupportHistory, isGuest } from '../utils/helpers';
+import { showError, pushSupportHistory, isGuest } from '../utils/helpers';
 import { isUserSuspended, supportAppealBanned } from '../utils/permissions';
 import { loadCategories, createTicket, uploadFilesToBody } from '../utils/api';
 import { supportComposerSupported, supportComposerOpenFor, openSupportComposer, supportComposerPreview } from '../utils/composer';
@@ -529,9 +529,9 @@ export default class SupportComposePage extends Page {
         this.body = '';
         if (body && body.composer) body.composer.hide();
         if (ticket && ticket.id()) {
-          m.route.set(BASE_PATH + '/' + encodeURIComponent(ticket.id()));
+          m.route.set(app.route('linkrobins-support.show', { id: ticket.id() }));
         } else {
-          m.route.set(BASE_PATH);
+          m.route.set(app.route('linkrobins-support.index'));
         }
       })
       .catch((err: any) => {
