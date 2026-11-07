@@ -31,7 +31,7 @@ class SupportNotifier
     /**
      * New-reply notification (user-facing replies only):
      *   - staff reply on a user's ticket  → notify the owner
-     *   - user reply on their own ticket   → notify all staff
+     *   - user reply on their own ticket   → notify assigned staff, routed group, or all staff
      *   - staff reply on their own ticket  → notify other staff (admin testing)
      */
     public function notifyNewReply(SupportReply $reply): void
@@ -44,13 +44,13 @@ class SupportNotifier
         $authorIsStaff = $this->isStaff($reply->user);
 
         if (! $authorIsStaff) {
-            $recipients = $this->staffRecipients($reply->user_id);
+            $recipients = $this->ticketStaffRecipients($ticket, $reply->user_id);
         } elseif ($ticket->user) {
             $recipients = ((int) $ticket->user_id === (int) $reply->user_id)
-                ? $this->staffRecipients($reply->user_id)
+                ? $this->ticketStaffRecipients($ticket, $reply->user_id)
                 : [$ticket->user];
         } else {
-            $recipients = $this->staffRecipients($reply->user_id);
+            $recipients = $this->ticketStaffRecipients($ticket, $reply->user_id);
         }
 
         if (! empty($recipients)) {
@@ -152,7 +152,27 @@ class SupportNotifier
      */
     protected function newTicketRecipients(SupportTicket $ticket, ?int $exceptId = null): array
     {
+        $category = $ticket->category;
+        if ($category && $category->is_silent) {
+            return [];
+        }
+
         $exceptId ??= $ticket->user_id === null ? null : (int) $ticket->user_id;
+
+        return $this->ticketStaffRecipients($ticket, $exceptId);
+    }
+
+    /**
+     * Staff recipients for a ticket:
+     *   1. If ticket is assigned to active staff, only that person is notified.
+     *   2. If category is silent and ticket is unassigned, no staff are notified.
+     *   3. If category routes to a group, staff in that group are notified.
+     *   4. Otherwise, falls back to all staff members.
+     *
+     * @return list<User>
+     */
+    protected function ticketStaffRecipients(SupportTicket $ticket, ?int $exceptId = null): array
+    {
         $assignee = $ticket->assignedStaff;
 
         // Re-check the permission rather than trusting the stored id. The
@@ -160,12 +180,49 @@ class SupportNotifier
         // from a queued job -- on a busy queue that can be minutes later, and
         // the account may have lost its staff group in between. Notifying only
         // a person who can no longer open the ticket would lose it silently,
-        // so fall back to telling everyone.
+        // so fall back to the rest of the routing.
         if ($assignee && $this->isStaff($assignee)) {
             return ((int) $assignee->id === $exceptId) ? [] : [$assignee];
         }
 
+        $category = $ticket->category;
+        if ($category && $category->is_silent) {
+            return [];
+        }
+
+        if ($category && $category->default_assigned_group_id) {
+            return $this->groupRecipients((int) $category->default_assigned_group_id, $exceptId);
+        }
+
         return $this->staffRecipients($exceptId);
+    }
+
+    /**
+     * Members of a specific group who are authorized support staff.
+     *
+     * @return User[]
+     */
+    protected function groupRecipients(int $groupId, ?int $exceptId = null): array
+    {
+        try {
+            $query = User::query()->whereHas('groups', function ($q) use ($groupId) {
+                $q->where('groups.id', $groupId);
+            });
+
+            // Enforce that recipients are actual staff (admins or hold handle_tickets),
+            // matching the staff requirement across all ticket notifications.
+            SupportAbilities::whereStaff($query);
+
+            if ($exceptId !== null) {
+                $query->where('id', '!=', $exceptId);
+            }
+
+            return $query->get()->all();
+        } catch (\Throwable $e) {
+            $this->log->warning('[linkrobins/support] groupRecipients failed', ['exception' => $e]);
+
+            return [];
+        }
     }
 
     /**
@@ -182,11 +239,12 @@ class SupportNotifier
         // driver creates the bell-icon alert for EVERY recipient passed to
         // sync() (only the email driver filters, by shouldEmail), so we must
         // drop users here who have switched this notification off in their
-        // /settings -- otherwise it can't be suppressed.
+        // /settings across all active notification drivers (alert, email, push, etc.)
+        // -- otherwise it can't be suppressed.
         $type = $blueprint::getType();
         $recipients = array_values(array_filter(
             $recipients,
-            fn ($user) => $user->shouldAlert($type) || $user->shouldEmail($type)
+            fn ($user) => $this->shouldReceiveAnyDriver($user, $type)
         ));
 
         if (empty($recipients)) {
@@ -266,5 +324,27 @@ class SupportNotifier
     protected function isStaff(?User $user): bool
     {
         return $user !== null && SupportAbilities::isStaff($user);
+    }
+
+    /**
+     * Check if the user has enabled ANY registered notification driver for this
+     * blueprint type (Alert, Email, WebPush, Discord, etc.).
+     */
+    protected function shouldReceiveAnyDriver(User $user, string $type): bool
+    {
+        $drivers = NotificationSyncer::getNotificationDrivers();
+        if (empty($drivers)) {
+            return $user->shouldAlert($type) || $user->shouldEmail($type);
+        }
+
+        foreach (array_keys($drivers) as $driverName) {
+            $prefKey = User::getNotificationPreferenceKey($type, (string) $driverName);
+
+            if ((bool) $user->getPreference($prefKey)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
