@@ -547,9 +547,7 @@ export default class CategoryEditorModal extends FormModal<any> {
     // and a model to its {type, id}.
     attrs.relationships = {
       defaultAssignee: assigneeId ? this._assigneeModel(assigneeId) : { data: null },
-      defaultAssignedGroup: groupId
-        ? app.store.getById('groups', groupId) || { data: { type: 'groups', id: groupId } }
-        : { data: null },
+      defaultAssignedGroup: groupId ? app.store.getById('groups', groupId) || { data: { type: 'groups', id: groupId } } : { data: null },
     };
 
     saveCategory(this.category, attrs)
