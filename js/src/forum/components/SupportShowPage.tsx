@@ -833,17 +833,59 @@ export default class SupportShowPage extends Page<any> {
       submitLabel: extractText(app.translator.trans('linkrobins-support.forum.reply.post_reply')),
       confirmExit: extractText(app.translator.trans('linkrobins-support.forum.reply.discard_confirm')),
       originalContent: '',
-      supportHeaderItems: () => [
-        {
-          name: 'title',
-          priority: 10,
-          content: (
-            <h3 className="LinkRobinsSupport-composerTitle">
-              <Icon name="fas fa-reply" /> {subject}
-            </h3>
-          ),
-        },
-      ],
+      supportHeaderItems: (body: any) => {
+        const rows: any[] = [
+          {
+            name: 'title',
+            priority: 10,
+            content: (
+              <h3 className="LinkRobinsSupport-composerTitle">
+                <Icon name="fas fa-reply" /> {subject}
+              </h3>
+            ),
+          },
+        ];
+        if (canPostInternal) {
+          const isInternal = !!(
+            body._supportInternal ||
+            (body.attrs && body.attrs._supportInternal) ||
+            (body.composer && body.composer.body && body.composer.body._supportInternal)
+          );
+          const setInternal = (next: boolean) => {
+            body._supportInternal = next;
+            if (body.attrs) body.attrs._supportInternal = next;
+            if (body.composer && body.composer.body) body.composer.body._supportInternal = next;
+            m.redraw();
+          };
+          rows.push({
+            name: 'modeSegment',
+            priority: 5,
+            content: (
+              <div className="LinkRobinsSupport-modeSegmentWrap">
+                <div className="LinkRobinsSupport-modeSegment">
+                  <button
+                    type="button"
+                    className={'LinkRobinsSupport-modeSegment-item' + (!isInternal ? ' active' : '')}
+                    onclick={() => setInternal(false)}
+                  >
+                    <Icon name="fas fa-paper-plane" />
+                    <span>{app.translator.trans('linkrobins-support.forum.reply.post_reply')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={'LinkRobinsSupport-modeSegment-item LinkRobinsSupport-modeSegment-item--internal' + (isInternal ? ' active' : '')}
+                    onclick={() => setInternal(true)}
+                  >
+                    <Icon name="fas fa-lock" />
+                    <span>{app.translator.trans('linkrobins-support.forum.reply.internal_note')}</span>
+                  </button>
+                </div>
+              </div>
+            ),
+          });
+        }
+        return rows;
+      },
       onSupportSubmit: (content: string, body: any) => {
         const isInternal = !!(
           (body && body._supportInternal) ||

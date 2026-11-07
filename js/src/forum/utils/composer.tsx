@@ -41,7 +41,7 @@ export function installComposerControls(): void {
 
     const splitControl = (
       <SplitDropdown
-        className="App-primaryControl"
+        className="App-primaryControl LinkRobinsSupport-composerSplit"
         buttonClassName={'Button Button--primary' + (isInternal ? ' LinkRobinsSupport-btn--internal' : '')}
         menuClassName="Dropdown-menu--top Dropdown-menu--right"
         accessibleToggleLabel={extractText(app.translator.trans('linkrobins-support.forum.reply.internal_note'))}
@@ -56,17 +56,21 @@ export function installComposerControls(): void {
           </Button>
         }
       >
-        <Button icon="fas fa-paper-plane" className={'Dropdown-item' + (!isInternal ? ' active' : '')} onclick={() => setInternal(false)}>
-          <span className="LinkRobinsSupport-splitItem-title">{app.translator.trans('linkrobins-support.forum.reply.post_reply')}</span>
-          {!isInternal && <span className="LinkRobinsSupport-splitItem-check fas fa-check" />}
+        <Button
+          key="mode-public"
+          icon="fas fa-paper-plane"
+          className={'Dropdown-item' + (!isInternal ? ' active' : '')}
+          onclick={() => setInternal(false)}
+        >
+          {app.translator.trans('linkrobins-support.forum.reply.post_reply')}
         </Button>
         <Button
+          key="mode-internal"
           icon="fas fa-lock"
           className={'Dropdown-item LinkRobinsSupport-item--internal' + (isInternal ? ' active' : '')}
           onclick={() => setInternal(true)}
         >
-          <span className="LinkRobinsSupport-splitItem-title">{app.translator.trans('linkrobins-support.forum.reply.internal_note')}</span>
-          {isInternal && <span className="LinkRobinsSupport-splitItem-check fas fa-check" />}
+          {app.translator.trans('linkrobins-support.forum.reply.internal_note')}
         </Button>
       </SplitDropdown>
     );

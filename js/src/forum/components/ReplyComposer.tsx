@@ -103,7 +103,7 @@ export default class ReplyComposer extends Component {
           )}
           {canPostInternal ? (
             <SplitDropdown
-              className="App-primaryControl"
+              className="LinkRobinsSupport-replySplit"
               buttonClassName={'Button Button--primary' + (a.replyIsInternal ? ' LinkRobinsSupport-btn--internal' : '')}
               menuClassName="Dropdown-menu--top Dropdown-menu--right"
               accessibleToggleLabel={extractText(app.translator.trans('linkrobins-support.forum.reply.internal_note'))}
@@ -124,22 +124,22 @@ export default class ReplyComposer extends Component {
               }
             >
               <Button
+                key="mode-public"
                 icon="fas fa-paper-plane"
                 className={'Dropdown-item' + (!a.replyIsInternal ? ' active' : '')}
                 disabled={a.posting}
                 onclick={() => a.onToggleInternal(false)}
               >
-                <span className="LinkRobinsSupport-splitItem-title">{app.translator.trans('linkrobins-support.forum.reply.post_reply')}</span>
-                {!a.replyIsInternal && <span className="LinkRobinsSupport-splitItem-check fas fa-check" />}
+                {app.translator.trans('linkrobins-support.forum.reply.post_reply')}
               </Button>
               <Button
+                key="mode-internal"
                 icon="fas fa-lock"
                 className={'Dropdown-item LinkRobinsSupport-item--internal' + (a.replyIsInternal ? ' active' : '')}
                 disabled={a.posting}
                 onclick={() => a.onToggleInternal(true)}
               >
-                <span className="LinkRobinsSupport-splitItem-title">{app.translator.trans('linkrobins-support.forum.reply.internal_note')}</span>
-                {a.replyIsInternal && <span className="LinkRobinsSupport-splitItem-check fas fa-check" />}
+                {app.translator.trans('linkrobins-support.forum.reply.internal_note')}
               </Button>
             </SplitDropdown>
           ) : (
