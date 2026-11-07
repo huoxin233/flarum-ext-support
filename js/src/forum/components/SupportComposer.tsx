@@ -8,6 +8,7 @@ export interface ISupportComposerHeaderItem {
 }
 
 export interface ISupportComposerAttrs extends IComposerBodyAttrs {
+  className?: string;
   supportContext?: string;
   onSupportSubmit?: (content: string, body: SupportComposer) => void;
   supportHeaderItems?: (body: SupportComposer) => (ISupportComposerHeaderItem | null | undefined)[];
