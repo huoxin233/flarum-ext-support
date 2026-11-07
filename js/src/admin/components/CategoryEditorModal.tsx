@@ -31,7 +31,9 @@ export default class CategoryEditorModal extends FormModal<any> {
   ticketType = 'standard';
   allowedGroupIds: string[] = [];
   // '' means nobody -- no auto-assign, all staff notified.
+  isSilent = false;
   defaultAssigneeId = '';
+  defaultAssignedGroupId = '';
   staff: any[] = [];
   loadingStaff = true;
   staffError = false;
@@ -52,8 +54,11 @@ export default class CategoryEditorModal extends FormModal<any> {
     this.ticketType = (category && category.ticketType && category.ticketType()) || 'standard';
     const allowed = category && category.attribute('allowedGroupIds');
     this.allowedGroupIds = Array.isArray(allowed) ? allowed.map(String) : [];
+    this.isSilent = Boolean(category && (category.isSilent ? category.isSilent() : category.attribute('isSilent')));
     const assignee = category && category.defaultAssignee && category.defaultAssignee();
     this.defaultAssigneeId = assignee ? String(assignee.id()) : '';
+    const group = category && category.defaultAssignedGroup && category.defaultAssignedGroup();
+    this.defaultAssignedGroupId = group ? String(group.id()) : '';
     this.saving = false;
     this.error = null;
 
@@ -231,11 +236,11 @@ export default class CategoryEditorModal extends FormModal<any> {
       <div className="Form-group">
         <label>{app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee')}</label>
         <Select
-          value={optionKey(this.defaultAssigneeId)}
+          value={this._currentRoutingKey()}
           disabled={this.saving || this.loadingStaff}
           options={this._assigneeOptions()}
           onchange={(value: string) => {
-            this.defaultAssigneeId = value ? String(value).replace(/^u/, '') : '';
+            this._setRoutingKey(value);
           }}
         />
         {this.staffError ? (
@@ -343,36 +348,86 @@ export default class CategoryEditorModal extends FormModal<any> {
     );
   }
 
+  _currentRoutingKey(): string {
+    if (this.isSilent) {
+      return 'none';
+    }
+    if (this.defaultAssignedGroupId) {
+      return 'g' + this.defaultAssignedGroupId;
+    }
+    if (this.defaultAssigneeId) {
+      return 'u' + this.defaultAssigneeId;
+    }
+    return '';
+  }
+
+  _setRoutingKey(value: string) {
+    if (value === 'none') {
+      this.isSilent = true;
+      this.defaultAssigneeId = '';
+      this.defaultAssignedGroupId = '';
+    } else if (value.startsWith('g')) {
+      this.isSilent = false;
+      this.defaultAssigneeId = '';
+      this.defaultAssignedGroupId = value.slice(1);
+    } else if (value.startsWith('u')) {
+      this.isSilent = false;
+      this.defaultAssigneeId = value.slice(1);
+      this.defaultAssignedGroupId = '';
+    } else {
+      this.isSilent = false;
+      this.defaultAssigneeId = '';
+      this.defaultAssignedGroupId = '';
+    }
+  }
+
   /**
-   * Nobody, then every staff member. A user who is configured on this category
-   * but is no longer staff would otherwise vanish from the list and silently
-   * reset to "nobody" on the next save, so they are kept as a labelled option
-   * -- the label is how an admin finds out the routing has gone stale.
+   * Unassigned (all staff), Silent, then Groups, then individual staff members.
    *
-   * Keys are `u<id>`, not the bare id: JavaScript enumerates integer-like
-   * object keys first, in numeric order, whatever order they were inserted
-   * in -- which sorted "Nobody" (key '') to the bottom of the list, under
-   * the staff. Prefixing keeps every key a plain string, so the order here
-   * is the order rendered.
+   * Keys are non-numeric strings ('', 'none', 'g<id>', 'u<id>') so JavaScript
+   * preserves exact insertion order rather than reordering numeric keys.
    */
   _assigneeOptions(): Record<string, string> {
     const options: Record<string, string> = {
       '': this.loadingStaff
         ? extractText(app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee_loading'))
         : extractText(app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee_none')),
+      none: extractText(app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee_silent')),
     };
 
-    this.staff.forEach((user: any) => {
-      options[optionKey(user.id())] = user.displayName() || user.username();
+    // User groups from store (exclude Guest and Member groups, i.e. 2 and 3)
+    const groups = ((app.store && app.store.all('groups')) || []).filter((g: any) => g.id() !== '2' && g.id() !== '3');
+
+    groups.forEach((g: any) => {
+      const gName = g.namePlural() || g.nameSingular() || '#' + g.id();
+      options['g' + g.id()] = extractText(
+        app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee_group_prefix', { name: gName })
+      );
     });
 
-    const currentKey = optionKey(this.defaultAssigneeId);
-    if (this.defaultAssigneeId && !options[currentKey] && !this.loadingStaff) {
-      const current = this._currentAssignee();
-      const name = (current && (current.displayName() || current.username())) || '#' + this.defaultAssigneeId;
-      options[currentKey] = extractText(
-        app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee_unavailable', { name })
+    // Staff members
+    this.staff.forEach((user: any) => {
+      const uName = user.displayName() || user.username();
+      options['u' + user.id()] = extractText(
+        app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee_user_prefix', { name: uName })
       );
+    });
+
+    const currentKey = this._currentRoutingKey();
+    if (currentKey && !options[currentKey] && !this.loadingStaff) {
+      if (currentKey.startsWith('u')) {
+        const current = this._currentAssignee();
+        const name = (current && (current.displayName() || current.username())) || '#' + this.defaultAssigneeId;
+        options[currentKey] = extractText(
+          app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee_unavailable', { name })
+        );
+      } else if (currentKey.startsWith('g')) {
+        options[currentKey] = extractText(
+          app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee_unavailable', {
+            name: '#' + this.defaultAssignedGroupId,
+          })
+        );
+      }
     }
 
     return options;
@@ -418,6 +473,7 @@ export default class CategoryEditorModal extends FormModal<any> {
       icon: this.icon,
       position: this.position,
       ticketType: this.ticketType,
+      isSilent: this.isSilent,
       allowedGroupIds: this.allowedGroupIds.length ? this.allowedGroupIds.map(Number) : null,
     };
     if (this.slug && this.slug.trim()) {
@@ -438,6 +494,9 @@ export default class CategoryEditorModal extends FormModal<any> {
     // and a model to its {type, id}.
     attrs.relationships = {
       defaultAssignee: this.defaultAssigneeId ? this._assigneeModel(this.defaultAssigneeId) : { data: null },
+      defaultAssignedGroup: this.defaultAssignedGroupId
+        ? app.store.getById('groups', this.defaultAssignedGroupId) || { data: { type: 'groups', id: this.defaultAssignedGroupId } }
+        : { data: null },
     };
 
     saveCategory(this.category, attrs)
