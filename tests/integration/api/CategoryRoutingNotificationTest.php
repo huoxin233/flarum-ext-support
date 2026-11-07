@@ -43,11 +43,13 @@ class CategoryRoutingNotificationTest extends TestCase
             'groups' => [
                 ['id' => 100, 'name_singular' => 'Support', 'name_plural' => 'Support', 'is_hidden' => 0],
                 ['id' => 101, 'name_singular' => 'Billing', 'name_plural' => 'Billing', 'is_hidden' => 0],
+                ['id' => 102, 'name_singular' => 'Sales', 'name_plural' => 'Sales', 'is_hidden' => 0],
             ],
             'group_user' => [
                 ['user_id' => 3, 'group_id' => 100],
                 ['user_id' => 4, 'group_id' => 100],
                 ['user_id' => 5, 'group_id' => 101],
+                ['user_id' => 6, 'group_id' => 102],
             ],
             'group_permission' => [
                 ['group_id' => 100, 'permission' => 'lr-support.handle_tickets'],
@@ -86,6 +88,18 @@ class CategoryRoutingNotificationTest extends TestCase
                     'position' => 2,
                     'default_assignee_id' => null,
                     'default_assigned_group_id' => 101,
+                    'is_silent' => 0,
+                    'created_at' => Carbon::now(),
+                    'updated_at' => Carbon::now(),
+                ],
+                [
+                    'id' => 4,
+                    'name' => 'Non-Staff Routed',
+                    'slug' => 'non-staff-routed',
+                    'ticket_type' => 'standard',
+                    'position' => 3,
+                    'default_assignee_id' => null,
+                    'default_assigned_group_id' => 102,
                     'is_silent' => 0,
                     'created_at' => Carbon::now(),
                     'updated_at' => Carbon::now(),
@@ -136,6 +150,24 @@ class CategoryRoutingNotificationTest extends TestCase
         $this->assertEquals(201, $response->getStatusCode(), $body);
 
         return (int) json_decode($body, true)['data']['id'];
+    }
+
+    private function setStatus(int $actorId, string $status, int $ticketId): int
+    {
+        $response = $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-tickets/' . $ticketId, [
+                'authenticatedAs' => $actorId,
+                'json' => [
+                    'data' => [
+                        'type' => 'linkrobins-support-tickets',
+                        'id' => (string) $ticketId,
+                        'attributes' => ['status' => $status],
+                    ],
+                ],
+            ])
+        );
+
+        return $response->getStatusCode();
     }
 
     #[Test]
@@ -326,5 +358,112 @@ class CategoryRoutingNotificationTest extends TestCase
         // Staff members are 1 (Admin), 3, 4 (Support), 5 (Billing).
         // User 3 disabled all drivers for this type, so only [1, 4, 5] remain.
         $this->assertEquals([1, 4, 5], $recipients, 'User who disabled all drivers should be excluded from notification delivery.');
+    }
+
+    #[Test]
+    public function user_reopening_ticket_in_silent_category_sends_no_staff_notifications(): void
+    {
+        $ticketId = $this->openTicketIn(2);
+
+        // Staff (user 3) closes it
+        $this->assertEquals(200, $this->setStatus(3, 'closed', $ticketId));
+        $this->database()->table('notifications')->delete();
+
+        // Owner (user 2) reopens it
+        $this->assertEquals(200, $this->setStatus(2, 'open', $ticketId));
+
+        $count = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportTicketStatusChanged')
+            ->count();
+
+        $this->assertEquals(0, $count, 'Reopening a ticket in a silent category must produce zero staff notifications.');
+    }
+
+    #[Test]
+    public function user_reopening_ticket_in_group_routed_category_notifies_only_that_group(): void
+    {
+        $ticketId = $this->openTicketIn(3);
+
+        // Staff (user 5) closes it
+        $this->assertEquals(200, $this->setStatus(5, 'closed', $ticketId));
+        $this->database()->table('notifications')->delete();
+
+        // Owner (user 2) reopens it
+        $this->assertEquals(200, $this->setStatus(2, 'open', $ticketId));
+
+        $recipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportTicketStatusChanged')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        sort($recipients);
+
+        $this->assertEquals([5], $recipients, 'Reopening ticket in group-routed category should only notify that group.');
+    }
+
+    #[Test]
+    public function user_reply_to_assigned_ticket_in_silent_category_notifies_assignee(): void
+    {
+        $ticketId = $this->openTicketIn(2);
+
+        // Staff assigns ticket to Support Staff A (user 3)
+        $this->send(
+            $this->request('PATCH', "/api/linkrobins-support-tickets/{$ticketId}", [
+                'authenticatedAs' => 1,
+                'json' => [
+                    'data' => [
+                        'relationships' => [
+                            'assignedStaff' => ['data' => ['type' => 'users', 'id' => '3']],
+                        ],
+                    ],
+                ],
+            ])
+        );
+        $this->database()->table('notifications')->delete();
+
+        // User 2 replies to their assigned ticket
+        $this->postReply($ticketId, 2, 'Replying to assigned staff in silent category');
+
+        $recipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportNewReply')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $this->assertEquals([3], $recipients, 'User reply on assigned ticket in silent category should notify the assignee.');
+    }
+
+    #[Test]
+    public function non_staff_members_of_routed_group_are_not_notified(): void
+    {
+        // Category 4 routes to Group 102 (Sales), which contains User 6 (who lacks lr-support.handle_tickets).
+        $ticketId = $this->openTicketIn(4);
+
+        $recipients = $this->database()->table('notifications')
+            ->where('subject_id', $ticketId)
+            ->where('type', 'linkrobinsSupportNewTicket')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        // User 6 is not staff, so User 6 must not be notified about support tickets
+        $this->assertNotContains(6, $recipients, 'Non-staff members of a group must not receive ticket notifications.');
+    }
+
+    #[Test]
+    public function staff_filing_ticket_into_routed_group_is_not_self_notified(): void
+    {
+        // User 5 (Billing staff) opens a ticket in Category 3 (routed to Billing group).
+        $ticketId = $this->openTicketIn(3, actorId: 5);
+
+        $recipients = $this->database()->table('notifications')
+            ->where('subject_id', $ticketId)
+            ->where('type', 'linkrobinsSupportNewTicket')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        // User 5 filed the ticket, so they shouldn't be notified about their own ticket
+        $this->assertNotContains(5, $recipients, 'Author filing ticket into their own group must not be notified.');
     }
 }
