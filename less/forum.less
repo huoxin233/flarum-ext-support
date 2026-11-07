@@ -311,19 +311,14 @@
             padding: 0 !important;
             float: none !important;
 
-            // Hide the tiny caret button on mobile to eliminate misclick risks
-            > .Dropdown-toggle {
-                display: none !important;
-            }
-
             // Dropdown menu is not used on mobile (mode is selected via the segmented bar)
             .Dropdown-menu {
                 display: none !important;
             }
 
             // The main submit button in the mobile header: safe 48px touch target
-            > .Button,
-            > .SplitDropdown-button {
+            > .Button:not(.Dropdown-toggle),
+            > .SplitDropdown-button:not(.Dropdown-toggle) {
                 display: inline-flex !important;
                 align-items: center !important;
                 justify-content: center !important;
@@ -363,6 +358,19 @@
                         color: #d68910 !important;
                     }
                 }
+            }
+
+            // Hide the tiny caret button on mobile to eliminate misclick risks
+            > .Dropdown-toggle,
+            .Dropdown-toggle {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+                min-width: 0 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                border: 0 !important;
+                pointer-events: none !important;
             }
         }
     }
