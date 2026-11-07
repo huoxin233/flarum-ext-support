@@ -845,7 +845,14 @@ export default class SupportShowPage extends Page<any> {
         },
       ],
       onSupportSubmit: (content: string, body: any) => {
-        this._postReply(content, !!body._supportInternal, body);
+        const isInternal = !!(
+          (body && body._supportInternal) ||
+          (body && body.attrs && body.attrs._supportInternal) ||
+          (app.composer &&
+            app.composer.body &&
+            (app.composer.body._supportInternal || (app.composer.body.attrs && app.composer.body.attrs._supportInternal)))
+        );
+        this._postReply(content, isInternal, body);
       },
     });
   }

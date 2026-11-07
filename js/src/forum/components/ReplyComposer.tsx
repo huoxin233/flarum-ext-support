@@ -112,7 +112,7 @@ export default class ReplyComposer extends Component {
                   className={'Button Button--primary' + (a.replyIsInternal ? ' LinkRobinsSupport-btn--internal' : '')}
                   disabled={!canSubmit}
                   loading={a.posting}
-                  icon={a.replyIsInternal ? 'fas fa-lock' : 'fas fa-paper-plane'}
+                  icon="fas fa-paper-plane"
                   onclick={() => a.onSubmit()}
                 >
                   {a.posting

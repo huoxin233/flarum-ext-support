@@ -11,21 +11,33 @@ import { showError } from './helpers';
 
 let textEditorControlsInstalled = false;
 
-function installComposerControls(): void {
+export function installComposerControls(): void {
   if (textEditorControlsInstalled) return;
   textEditorControlsInstalled = true;
 
   extend('flarum/common/components/TextEditor' as any, 'controlItems', function (items: any) {
-    const composer = this.attrs.composer;
-    const body = composer && composer.body;
-    const bodyAttrs = body && body.attrs;
+    const composer = this.attrs.composer || app.composer;
+    const bodyInstance = composer && composer._supportComposerBody;
+    const bodyState = composer && composer.body;
+    const bodyAttrs = (bodyInstance && bodyInstance.attrs) || (bodyState && bodyState.attrs);
     if (!bodyAttrs || !bodyAttrs.canPostInternal) return;
 
-    const isInternal = !!body._supportInternal;
+    const isInternal = !!(
+      (bodyInstance && bodyInstance._supportInternal) ||
+      (bodyState && bodyState._supportInternal) ||
+      (bodyAttrs && bodyAttrs._supportInternal)
+    );
     const onsubmit = this.onsubmit.bind(this);
     const submitLabel = isInternal
       ? app.translator.trans('linkrobins-support.forum.reply.internal_note')
       : this.attrs.submitLabel || app.translator.trans('linkrobins-support.forum.reply.post_reply');
+
+    const setInternal = (next: boolean) => {
+      if (bodyInstance) bodyInstance._supportInternal = next;
+      if (bodyState) bodyState._supportInternal = next;
+      if (bodyAttrs) bodyAttrs._supportInternal = next;
+      m.redraw();
+    };
 
     const splitControl = (
       <SplitDropdown
@@ -36,7 +48,7 @@ function installComposerControls(): void {
         mainAction={
           <Button
             className={'Button Button--primary' + (isInternal ? ' LinkRobinsSupport-btn--internal' : '')}
-            icon={isInternal ? 'fas fa-lock' : 'fas fa-paper-plane'}
+            icon="fas fa-paper-plane"
             disabled={this.disabled}
             onclick={onsubmit}
           >
@@ -44,24 +56,14 @@ function installComposerControls(): void {
           </Button>
         }
       >
-        <Button
-          icon="fas fa-paper-plane"
-          className={'Dropdown-item' + (!isInternal ? ' active' : '')}
-          onclick={() => {
-            body._supportInternal = false;
-            m.redraw();
-          }}
-        >
+        <Button icon="fas fa-paper-plane" className={'Dropdown-item' + (!isInternal ? ' active' : '')} onclick={() => setInternal(false)}>
           <span className="LinkRobinsSupport-splitItem-title">{app.translator.trans('linkrobins-support.forum.reply.post_reply')}</span>
           {!isInternal && <span className="LinkRobinsSupport-splitItem-check fas fa-check" />}
         </Button>
         <Button
           icon="fas fa-lock"
           className={'Dropdown-item LinkRobinsSupport-item--internal' + (isInternal ? ' active' : '')}
-          onclick={() => {
-            body._supportInternal = true;
-            m.redraw();
-          }}
+          onclick={() => setInternal(true)}
         >
           <span className="LinkRobinsSupport-splitItem-title">{app.translator.trans('linkrobins-support.forum.reply.internal_note')}</span>
           {isInternal && <span className="LinkRobinsSupport-splitItem-check fas fa-check" />}
@@ -77,9 +79,10 @@ function installComposerControls(): void {
   });
 
   extend('flarum/common/components/TextEditor' as any, 'toolbarItems', function (items: any) {
-    const composer = this.attrs.composer;
-    const body = composer && composer.body;
-    const bodyAttrs = body && body.attrs;
+    const composer = this.attrs.composer || app.composer;
+    const bodyInstance = composer && composer._supportComposerBody;
+    const bodyState = composer && composer.body;
+    const bodyAttrs = (bodyInstance && bodyInstance.attrs) || (bodyState && bodyState.attrs);
     if (!bodyAttrs || !bodyAttrs.canPostInternal) return;
 
     items.add('linkrobinsSavedReplies', <SavedRepliesMenu />, -10);
@@ -103,6 +106,23 @@ let SupportComposerClass: any = null;
  */
 function makeSupportComposer(ComposerBody: any): any {
   return class SupportComposer extends ComposerBody {
+    oninit(vnode: any) {
+      super.oninit(vnode);
+      this._supportInternal = false;
+      if (this.composer) {
+        this.composer._supportComposerBody = this;
+      }
+    }
+
+    onremove(vnode: any) {
+      if (this.composer && this.composer._supportComposerBody === this) {
+        this.composer._supportComposerBody = null;
+      }
+      if (super.onremove) {
+        super.onremove(vnode);
+      }
+    }
+
     headerItems() {
       const items = super.headerItems();
       const defs = typeof this.attrs.supportHeaderItems === 'function' ? this.attrs.supportHeaderItems(this) : null;
