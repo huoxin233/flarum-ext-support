@@ -90,15 +90,17 @@ class SupportEvent extends AbstractModel
     public static function recordAssignment(
         SupportTicket $ticket,
         ?User $actor,
-        ?User $fromUser,
-        ?User $toUser
+        ?User $fromUser = null,
+        ?User $toUser = null,
+        ?int $fromUserId = null,
+        ?int $toUserId = null
     ): static {
         $event = new static();
         $event->ticket_id = (int) $ticket->id;
         $event->user_id = $actor ? (int) $actor->id : null;
         $event->type = self::TYPE_ASSIGNMENT;
-        $event->from_user_id = $fromUser ? (int) $fromUser->id : null;
-        $event->to_user_id = $toUser ? (int) $toUser->id : null;
+        $event->from_user_id = $fromUserId ?? ($fromUser ? (int) $fromUser->id : null);
+        $event->to_user_id = $toUserId ?? ($toUser ? (int) $toUser->id : null);
         $event->created_at = Carbon::now();
         $event->save();
 

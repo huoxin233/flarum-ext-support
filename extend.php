@@ -268,7 +268,19 @@ return [
             }
         })
         ->listen(\LinkRobins\Support\Event\TicketStatusChanged::class, RecordStatusChangeTimeline::class)
-        ->listen(\LinkRobins\Support\Event\TicketAssigned::class, RecordAssignmentTimeline::class),
+        ->listen(\LinkRobins\Support\Event\TicketStatusChanged::class, function (\LinkRobins\Support\Event\TicketStatusChanged $event) {
+            $category = $event->ticket->currentCategory();
+            if ($category) {
+                $category->ticketType()->onStatusChanged($event->ticket, $event->newStatus, $event->oldStatus, $event->actor);
+            }
+        })
+        ->listen(\LinkRobins\Support\Event\TicketAssigned::class, RecordAssignmentTimeline::class)
+        ->listen(\LinkRobins\Support\Event\TicketDecided::class, function (\LinkRobins\Support\Event\TicketDecided $event) {
+            $category = $event->ticket->currentCategory();
+            if ($category) {
+                $category->ticketType()->onDecided($event->ticket, $event->newDecision, $event->oldDecision, $event->actor);
+            }
+        }),
 
     (new Extend\Settings())
         ->default('linkrobins-support.nav_in_sidebar',             '1')

@@ -21,6 +21,8 @@ class RecordAssignmentTimeline
                 actor: $event->actor,
                 fromUser: $event->oldAssignee,
                 toUser: $event->assignee,
+                fromUserId: $event->oldAssigneeId,
+                toUserId: $event->assigneeId,
             );
         } catch (\Throwable $e) {
             $this->log->warning('[linkrobins/support] could not record assignment timeline event', [
