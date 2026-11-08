@@ -152,11 +152,6 @@ class SupportNotifier
      */
     protected function newTicketRecipients(SupportTicket $ticket, ?int $exceptId = null): array
     {
-        $category = $ticket->category;
-        if ($category && $category->is_silent) {
-            return [];
-        }
-
         $exceptId ??= $ticket->user_id === null ? null : (int) $ticket->user_id;
 
         return $this->ticketStaffRecipients($ticket, $exceptId);
