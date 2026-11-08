@@ -434,9 +434,9 @@ class CategoryRoutingNotificationTest extends TestCase
     }
 
     #[Test]
-    public function non_staff_members_of_routed_group_are_not_notified(): void
+    public function routed_group_with_no_staff_falls_back_to_all_staff(): void
     {
-        // Category 4 routes to Group 102 (Sales), which contains User 6 (who lacks lr-support.handle_tickets).
+        // Category 4 routes to Group 102 (Sales), which contains only User 6 (lacks lr-support.handle_tickets).
         $ticketId = $this->openTicketIn(4);
 
         $recipients = $this->database()->table('notifications')
@@ -445,9 +445,126 @@ class CategoryRoutingNotificationTest extends TestCase
             ->pluck('user_id')
             ->map(fn ($id) => (int) $id)
             ->all();
+        sort($recipients);
 
-        // User 6 is not staff, so User 6 must not be notified about support tickets
-        $this->assertNotContains(6, $recipients, 'Non-staff members of a group must not receive ticket notifications.');
+        // Staff members are 1 (Admin), 3 (Support), 4 (Support), 5 (Billing).
+        // Since Group 102 has no staff members, it must fall back to all staff.
+        $this->assertEquals([1, 3, 4, 5], $recipients, 'A routed group with no staff must fall back to notifying all staff.');
+        $this->assertNotContains(6, $recipients, 'Non-staff members must not receive ticket notifications.');
+
+        // User reply to this unassigned ticket should also fall back to all staff
+        $this->database()->table('notifications')->delete();
+        $this->postReply($ticketId, 2, 'Follow up from user');
+
+        $replyRecipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportNewReply')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        sort($replyRecipients);
+
+        $this->assertEquals([1, 3, 4, 5], $replyRecipients, 'Replies in category with staff-less group must fall back to all staff.');
+    }
+
+    #[Test]
+    public function deleted_routed_group_falls_back_to_all_staff(): void
+    {
+        // Create a temporary group 103 and route Category 1 to it
+        $this->database()->table('groups')->insert([
+            'id' => 103,
+            'name_singular' => 'Temporary',
+            'name_plural' => 'Temporary',
+            'is_hidden' => 0,
+        ]);
+        $this->database()->table('group_permission')->insert([
+            'group_id' => 103,
+            'permission' => 'lr-support.handle_tickets',
+        ]);
+        $this->database()->table('group_user')->insert([
+            'user_id' => 3,
+            'group_id' => 103,
+        ]);
+
+        $this->database()->table('linkrobins_support_categories')->where('id', 1)->update([
+            'default_assigned_group_id' => 103,
+        ]);
+
+        // Delete group 103 from the database
+        $this->database()->table('groups')->where('id', 103)->delete();
+
+        // Opening a ticket in Category 1 should fall back to all staff rather than silencing notifications
+        $ticketId = $this->openTicketIn(1);
+
+        $recipients = $this->database()->table('notifications')
+            ->where('subject_id', $ticketId)
+            ->where('type', 'linkrobinsSupportNewTicket')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        sort($recipients);
+
+        $this->assertEquals([1, 3, 4, 5], $recipients, 'Deleted routed group must fall back to notifying all staff.');
+
+        // Replies must also fall back to all staff
+        $this->database()->table('notifications')->delete();
+        $this->postReply($ticketId, 2, 'User replies to ticket with deleted group');
+
+        $replyRecipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportNewReply')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        sort($replyRecipients);
+
+        $this->assertEquals([1, 3, 4, 5], $replyRecipients, 'Replies in category with deleted routed group must fall back to all staff.');
+    }
+
+    #[Test]
+    public function auto_assigned_ticket_in_silent_category_notifies_the_assignee_on_creation(): void
+    {
+        // Category with default_assignee_id = 3 and is_silent = 1
+        $this->database()->table('linkrobins_support_categories')->insert([
+            'id' => 5,
+            'name' => 'Silent Auto-Assigned',
+            'slug' => 'silent-auto-assigned',
+            'ticket_type' => 'standard',
+            'position' => 4,
+            'default_assignee_id' => 3,
+            'default_assigned_group_id' => null,
+            'is_silent' => 1,
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
+        ]);
+
+        $ticketId = $this->openTicketIn(5);
+
+        // Verify ticket was auto-assigned to user 3
+        $assigneeId = (int) $this->database()->table('linkrobins_support_tickets')
+            ->where('id', $ticketId)
+            ->value('assigned_staff_id');
+        $this->assertEquals(3, $assigneeId);
+
+        // User 3 (assignee) must be notified on creation despite the category being silent
+        $recipients = $this->database()->table('notifications')
+            ->where('subject_id', $ticketId)
+            ->where('type', 'linkrobinsSupportNewTicket')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $this->assertEquals([3], $recipients, 'Auto-assigned ticket in silent category must notify the assignee on creation.');
+
+        // User reply to this ticket must also notify the assignee
+        $this->database()->table('notifications')->delete();
+        $this->postReply($ticketId, 2, 'User reply to auto-assigned silent ticket');
+
+        $replyRecipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportNewReply')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        $this->assertEquals([3], $replyRecipients, 'User reply on auto-assigned silent ticket must notify the assignee.');
     }
 
     #[Test]
