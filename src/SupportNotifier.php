@@ -161,7 +161,8 @@ class SupportNotifier
      * Staff recipients for a ticket:
      *   1. If ticket is assigned to active staff, only that person is notified.
      *   2. If category is silent and ticket is unassigned, no staff are notified.
-     *   3. If category routes to a group, staff in that group are notified.
+     *   3. If category routes to a group, staff in that group are notified (falling back
+     *      to all staff if the group is missing or staff-less).
      *   4. Otherwise, falls back to all staff members.
      *
      * @return list<User>

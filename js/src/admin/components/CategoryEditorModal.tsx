@@ -9,11 +9,6 @@ import extractText from 'flarum/common/utils/extractText';
 import { saveCategory, deleteCategory, loadStaffUsers } from '../utils';
 import { ticketTypes } from '../../common/ticketTypes';
 
-/** See _assigneeOptions(): '' stays '', a user id becomes a non-numeric key. */
-function optionKey(id: string | number | null): string {
-  return id ? 'u' + id : '';
-}
-
 /**
  * Create/edit a support category. Built on core's FormModal so it matches the
  * Tags "New Tag" modal (a real <form>, Form-wrapped fields, a Form-controls
