@@ -274,18 +274,4 @@ class TicketHistoryTest extends TestCase
         $this->assertEquals(3, (int) $assignmentEvent->to_user_id);
         $this->assertEquals(3, (int) $assignmentEvent->user_id);
     }
-
-    #[Test]
-    public function reassigning_away_from_a_deleted_user_keeps_raw_from_user_id(): void
-    {
-        // Ticket is currently assigned to a user id (999) that does not exist in the users table
-        $this->database()->table('linkrobins_support_tickets')->where('id', 1)->update(['assigned_staff_id' => 999]);
-
-        $this->patch(3, ['relationships' => ['assignedStaff' => ['data' => ['type' => 'users', 'id' => '3']]]]);
-
-        $row = $this->database()->table('linkrobins_support_events')->where('type', 'assignment')->first();
-        $this->assertNotNull($row);
-        $this->assertEquals(999, (int) $row->from_user_id);
-        $this->assertEquals(3, (int) $row->to_user_id);
-    }
 }

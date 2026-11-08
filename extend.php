@@ -271,14 +271,22 @@ return [
         ->listen(\LinkRobins\Support\Event\TicketStatusChanged::class, function (\LinkRobins\Support\Event\TicketStatusChanged $event) {
             $category = $event->ticket->currentCategory();
             if ($category) {
-                $category->ticketType()->onStatusChanged($event->ticket, $event->newStatus, $event->oldStatus, $event->actor);
+                try {
+                    $category->ticketType()->onStatusChanged($event->ticket, $event->newStatus, $event->oldStatus, $event->actor);
+                } catch (\Throwable $e) {
+                    resolve(\Psr\Log\LoggerInterface::class)->error('[linkrobins/support] ticket type onStatusChanged failed', ['exception' => $e]);
+                }
             }
         })
         ->listen(\LinkRobins\Support\Event\TicketAssigned::class, RecordAssignmentTimeline::class)
         ->listen(\LinkRobins\Support\Event\TicketDecided::class, function (\LinkRobins\Support\Event\TicketDecided $event) {
             $category = $event->ticket->currentCategory();
             if ($category) {
-                $category->ticketType()->onDecided($event->ticket, $event->newDecision, $event->oldDecision, $event->actor);
+                try {
+                    $category->ticketType()->onDecided($event->ticket, $event->newDecision, $event->oldDecision, $event->actor);
+                } catch (\Throwable $e) {
+                    resolve(\Psr\Log\LoggerInterface::class)->error('[linkrobins/support] ticket type onDecided failed', ['exception' => $e]);
+                }
             }
         }),
 

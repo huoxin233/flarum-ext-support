@@ -126,7 +126,10 @@ class SupportTicket extends AbstractModel
         $oldId = $this->assigned_staff_id === null ? null : (int) $this->assigned_staff_id;
 
         if ($newId !== $oldId) {
-            $oldAssignee = $this->relationLoaded('assignedStaff') ? $this->assignedStaff : null;
+            $oldAssignee = $this->relationLoaded('assignedStaff')
+                ? $this->assignedStaff
+                : ($oldId ? User::query()->find($oldId) : null);
+
             $this->assigned_staff_id = $newId;
             if ($assignee) {
                 $this->setRelation('assignedStaff', $assignee);

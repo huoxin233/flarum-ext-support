@@ -158,13 +158,15 @@ class SupportServiceProvider extends AbstractServiceProvider
      */
     protected static function dispatchIsolated(Events $events, object $event, LoggerInterface $log): void
     {
+        $eventName = get_class($event);
+
         if (method_exists($events, 'getListeners')) {
-            foreach ($events->getListeners(get_class($event)) as $listener) {
+            foreach ($events->getListeners($eventName) as $listener) {
                 try {
-                    $listener($event);
+                    $listener($eventName, [$event]);
                 } catch (\Throwable $e) {
                     $log->warning('[linkrobins/support] event listener failed', [
-                        'event' => get_class($event),
+                        'event' => $eventName,
                         'exception' => $e,
                     ]);
                 }
@@ -174,7 +176,7 @@ class SupportServiceProvider extends AbstractServiceProvider
                 $events->dispatch($event);
             } catch (\Throwable $e) {
                 $log->warning('[linkrobins/support] event dispatch failed', [
-                    'event' => get_class($event),
+                    'event' => $eventName,
                     'exception' => $e,
                 ]);
             }
