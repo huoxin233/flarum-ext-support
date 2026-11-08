@@ -239,12 +239,11 @@ class SupportNotifier
         // driver creates the bell-icon alert for EVERY recipient passed to
         // sync() (only the email driver filters, by shouldEmail), so we must
         // drop users here who have switched this notification off in their
-        // /settings across all active notification drivers (alert, email, push, etc.)
-        // -- otherwise it can't be suppressed.
+        // /settings -- otherwise it can't be suppressed.
         $type = $blueprint::getType();
         $recipients = array_values(array_filter(
             $recipients,
-            fn ($user) => $this->shouldReceiveAnyDriver($user, $type)
+            fn ($user) => $user->shouldAlert($type) || $user->shouldEmail($type)
         ));
 
         if (empty($recipients)) {
@@ -324,27 +323,5 @@ class SupportNotifier
     protected function isStaff(?User $user): bool
     {
         return $user !== null && SupportAbilities::isStaff($user);
-    }
-
-    /**
-     * Check if the user has enabled ANY registered notification driver for this
-     * blueprint type (Alert, Email, WebPush, Discord, etc.).
-     */
-    protected function shouldReceiveAnyDriver(User $user, string $type): bool
-    {
-        $drivers = NotificationSyncer::getNotificationDrivers();
-        if (empty($drivers)) {
-            return $user->shouldAlert($type) || $user->shouldEmail($type);
-        }
-
-        foreach (array_keys($drivers) as $driverName) {
-            $prefKey = User::getNotificationPreferenceKey($type, (string) $driverName);
-
-            if ((bool) $user->getPreference($prefKey)) {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
