@@ -7,6 +7,7 @@ use Flarum\Api\Endpoint;
 use Flarum\Api\Resource\AbstractDatabaseResource;
 use Flarum\Api\Schema;
 use Flarum\Api\Sort\SortColumn;
+use Flarum\Group\Group;
 use Flarum\Locale\TranslatorInterface;
 use Flarum\User\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -279,7 +280,18 @@ class SupportCategoryResource extends AbstractDatabaseResource
                         $targetId = (int) $value;
                     }
 
-                    $cat->default_assigned_group_id = $targetId ?: null;
+                    if (! $targetId) {
+                        $cat->default_assigned_group_id = null;
+
+                        return;
+                    }
+
+                    $group = Group::query()->find($targetId);
+                    if (! $group) {
+                        throw new BadRequestException($this->translator->trans('linkrobins-support.api.default_assigned_group_invalid'));
+                    }
+
+                    $cat->default_assigned_group_id = $targetId;
                 }),
         ];
     }

@@ -442,6 +442,7 @@ linkrobins-support:
     decision_not_allowed: 'Tickets in this category do not take that decision.'
     assign_staff_only: 'Tickets can only be assigned to support staff.'
     default_assignee_staff_only: 'A category can only be assigned to support staff.'
+    default_assigned_group_invalid: 'The selected routed group does not exist.'
     category_required: 'A category is required.'
     subject_required: 'A subject is required.'
     ticket_soft_delete_first: 'A ticket must be soft-deleted before it can be permanently removed.'

@@ -190,8 +190,11 @@ class SupportNotifier
             return [];
         }
 
-        if ($category && $category->default_assigned_group_id) {
-            return $this->groupRecipients((int) $category->default_assigned_group_id, $exceptId);
+        if ($category && ($group = $category->effectiveDefaultGroup())) {
+            $recipients = $this->groupRecipients((int) $group->id, $exceptId);
+            if (! empty($recipients)) {
+                return $recipients;
+            }
         }
 
         return $this->staffRecipients($exceptId);

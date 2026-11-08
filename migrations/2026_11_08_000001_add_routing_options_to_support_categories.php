@@ -17,6 +17,10 @@ return [
                 // Null means no group routing: tickets in this category route
                 // according to default_assignee_id, or fall back to all staff.
                 $table->integer('default_assigned_group_id')->unsigned()->nullable();
+
+                $table->foreign('default_assigned_group_id', 'support_categories_default_group_foreign')
+                    ->references('id')->on('groups')
+                    ->nullOnDelete();
             }
 
             if (! $schema->hasColumn('linkrobins_support_categories', 'is_silent')) {
@@ -27,6 +31,14 @@ return [
     },
 
     'down' => function (Builder $schema) {
+        try {
+            $schema->table('linkrobins_support_categories', function (Blueprint $table) {
+                $table->dropForeign('support_categories_default_group_foreign');
+            });
+        } catch (\Throwable $e) {
+            // Already absent (partial rollback) -- nothing to drop.
+        }
+
         $schema->table('linkrobins_support_categories', function (Blueprint $table) use ($schema) {
             if ($schema->hasColumn('linkrobins_support_categories', 'default_assigned_group_id')) {
                 $table->dropColumn('default_assigned_group_id');
