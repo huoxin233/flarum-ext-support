@@ -7,7 +7,7 @@ import Button from 'flarum/common/components/Button';
 
 import { installSupportNotificationGrouping } from './components/notifications';
 import { installRealtime } from './utils/live';
-import { basePath, BASE_PATH, showNavInSidebar, showNavInAccountMenu, readForumAttribute, showError } from './utils/helpers';
+import { showNavInSidebar, showNavInAccountMenu, readForumAttribute, showError } from './utils/helpers';
 import { clearTargetOnModalClose } from './utils/guestAction';
 import { ticketTypes } from '../common/ticketTypes';
 import addSupportSearch from './addSupportSearch';
@@ -93,7 +93,7 @@ app.initializers.add('linkrobins-support', () => {
   });
 
   const supportLink = () => (
-    <LinkButton href={basePath() + BASE_PATH} icon="fas fa-life-ring">
+    <LinkButton href={app.route('linkrobins-support.index')} icon="fas fa-life-ring">
       {app.translator.trans('linkrobins-support.forum.nav')}
     </LinkButton>
   );

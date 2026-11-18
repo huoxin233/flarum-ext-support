@@ -229,4 +229,48 @@ class TicketHistoryTest extends TestCase
 
         $this->assertEquals(0, $this->database()->table('linkrobins_support_events')->count());
     }
+
+    #[Test]
+    public function a_staff_filed_ticket_starts_in_progress_and_records_claim_without_status_change(): void
+    {
+        $response = $this->send(
+            $this->request('POST', '/api/linkrobins-support-tickets', [
+                'authenticatedAs' => 3,
+                'json' => [
+                    'data' => [
+                        'type' => 'linkrobins-support-tickets',
+                        'attributes' => [
+                            'subject' => 'Staff filed ticket',
+                            'firstPost' => 'Opening reply from staff.',
+                        ],
+                        'relationships' => [
+                            'category' => [
+                                'data' => ['type' => 'linkrobins-support-categories', 'id' => '1'],
+                            ],
+                        ],
+                    ],
+                ],
+            ])
+        );
+
+        $this->assertEquals(201, $response->getStatusCode(), (string) $response->getBody());
+        $ticketData = json_decode((string) $response->getBody(), true)['data'];
+        $ticketId = (int) $ticketData['id'];
+
+        $this->assertEquals('in_progress', $this->database()->table('linkrobins_support_tickets')->where('id', $ticketId)->value('status'));
+
+        $events = $this->database()->table('linkrobins_support_events')
+            ->where('ticket_id', $ticketId)
+            ->orderBy('id')
+            ->get();
+
+        $statusEvent = $events->firstWhere('type', 'status');
+        $this->assertNull($statusEvent, 'Starting a staff-filed ticket in progress should not record a status change event');
+
+        $assignmentEvent = $events->firstWhere('type', 'assignment');
+        $this->assertNotNull($assignmentEvent, 'Expected an assignment event to be recorded for the opening message');
+        $this->assertNull($assignmentEvent->from_user_id);
+        $this->assertEquals(3, (int) $assignmentEvent->to_user_id);
+        $this->assertEquals(3, (int) $assignmentEvent->user_id);
+    }
 }

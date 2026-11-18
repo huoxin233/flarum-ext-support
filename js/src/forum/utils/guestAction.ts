@@ -1,4 +1,5 @@
-import { BASE_PATH, basePath, isGuest } from './helpers';
+import app from 'flarum/forum/app';
+import { basePath, isGuest } from './helpers';
 
 /**
  * Where a guest was headed when they were sent to the log-in modal.
@@ -42,8 +43,8 @@ export function clearGuestTarget(): void {
  * take them afterwards. Never imports LogInModal statically: it is a lazy
  * chunk in Flarum 2.
  */
-export function promptLogIn(path: string = BASE_PATH + '/new'): void {
-  setTarget(path);
+export function promptLogIn(path?: string): void {
+  setTarget(path || app.route('linkrobins-support.compose'));
   app.modal.show(() => import('flarum/forum/components/LogInModal')).catch(() => clearGuestTarget());
 }
 
