@@ -27,8 +27,13 @@ class SupportServiceProvider extends AbstractServiceProvider
         });
     }
 
-    public function boot(Formatter $formatter, Dispatcher $bus, Events $events, LoggerInterface $log): void
-    {
+    public function boot(
+        Formatter $formatter,
+        Dispatcher $bus,
+        Events $events,
+        LoggerInterface $log,
+        RateLimiter $rateLimiter
+    ): void {
         // Plug Flarum's formatter into the reply model so calling
         // setContentAttribute() runs Markdown/BBCode through the same
         // pipeline discussions use. The parsed source ends up in

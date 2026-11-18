@@ -10,6 +10,7 @@
 namespace LinkRobins\Support\Tests\integration\api;
 
 use Carbon\Carbon;
+use Flarum\Settings\SettingsRepositoryInterface;
 use Flarum\Testing\integration\RetrievesAuthorizedUsers;
 use Flarum\Testing\integration\TestCase;
 use Flarum\User\Guest;
@@ -215,8 +216,10 @@ class TicketThrottleTest extends TestCase
         );
         $this->assertEquals(403, $refused->getStatusCode());
 
-        // Raise quota and immediately retry: the 403 must not have started a 429 cooldown.
-        $this->setting('linkrobins-support.general_limit_per_window', '10');
+        // Raise quota via the booted settings repository and immediately retry:
+        // the 403 must not have started a 429 cooldown.
+        $this->app()->getContainer()->make(SettingsRepositoryInterface::class)
+            ->set('linkrobins-support.general_limit_per_window', '10');
         $allowed = $this->send(
             $this->request('POST', '/api/linkrobins-support-tickets', [
                 'authenticatedAs' => 2,
