@@ -2,7 +2,6 @@
 
 namespace LinkRobins\Support;
 
-use Flarum\Group\Group;
 use Flarum\Notification\NotificationSyncer;
 use Flarum\User\User;
 use LinkRobins\Support\Access\SupportAbilities;
@@ -181,15 +180,17 @@ class SupportNotifier
             return ((int) $assignee->id === $exceptId) ? [] : [$assignee];
         }
 
-        $category = $ticket->category;
+        $category = $ticket->currentCategory();
         if ($category && $category->is_silent) {
             return [];
         }
 
         if ($category && ($group = $category->effectiveDefaultGroup())) {
-            $recipients = $this->groupRecipients((int) $group->id, $exceptId);
-            if (! empty($recipients)) {
-                return $recipients;
+            $groupStaff = $this->groupRecipients((int) $group->id);
+            if (! empty($groupStaff)) {
+                return $exceptId === null
+                    ? $groupStaff
+                    : array_values(array_filter($groupStaff, fn (User $u) => (int) $u->id !== $exceptId));
             }
         }
 
@@ -289,17 +290,9 @@ class SupportNotifier
     protected function staffRecipients(?int $exceptId = null): array
     {
         try {
-            $query = User::query()->where(function ($q) {
-                $q->whereHas('groups', function ($q) {
-                    $q->where('groups.id', Group::ADMINISTRATOR_ID);
-                })->orWhereHas('groups', function ($q) {
-                    $q->whereIn('groups.id', function ($sub) {
-                        $sub->select('group_id')
-                            ->from('group_permission')
-                            ->where('permission', SupportAbilities::HANDLE_TICKETS);
-                    });
-                });
-            });
+            $query = User::query();
+
+            SupportAbilities::whereStaff($query);
 
             if ($exceptId !== null) {
                 $query->where('id', '!=', $exceptId);
