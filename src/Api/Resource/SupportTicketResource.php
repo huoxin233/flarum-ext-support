@@ -13,12 +13,15 @@ use Illuminate\Contracts\Bus\Dispatcher;
 use Flarum\User\User;
 use Illuminate\Database\Eloquent\Builder;
 use LinkRobins\Support\Access\SupportAbilities;
+use LinkRobins\Support\Event\TicketChanged;
 use LinkRobins\Support\Job\NotifyAssigned;
 use LinkRobins\Support\Job\NotifyStatusChanged;
 use LinkRobins\Support\RateLimiter;
 use LinkRobins\Support\SupportCategory;
+use LinkRobins\Support\SupportServiceProvider;
 use LinkRobins\Support\SupportTicket;
 use LinkRobins\Support\UserState;
+use Psr\Log\LoggerInterface;
 use Tobyz\JsonApiServer\Context;
 use Tobyz\JsonApiServer\Exception\BadRequestException;
 use Tobyz\JsonApiServer\Exception\ForbiddenException;
@@ -39,6 +42,7 @@ class SupportTicketResource extends AbstractDatabaseResource
         protected RateLimiter $rateLimiter,
         protected TranslatorInterface $translator,
         protected Dispatcher $bus,
+        protected LoggerInterface $log,
     ) {
     }
 
@@ -171,7 +175,7 @@ class SupportTicketResource extends AbstractDatabaseResource
                     }
                     $actor = $context->getActor();
                     if (SupportAbilities::isStaff($actor)) {
-                        $ticket->status = $value;
+                        $ticket->changeStatus($value, $actor);
                         return;
                     }
                     // Non-staff: the owner of a non-appeal ticket may make two
@@ -184,12 +188,12 @@ class SupportTicketResource extends AbstractDatabaseResource
                         $this->ownerMayReopen($ticket, $actor)
                         && $value === SupportTicket::STATUS_OPEN
                     ) {
-                        $ticket->status = $value;
+                        $ticket->changeStatus($value, $actor);
                     } elseif (
                         $this->ownerMayConfirmSolved($ticket, $actor)
                         && $value === SupportTicket::STATUS_CLOSED
                     ) {
-                        $ticket->status = $value;
+                        $ticket->changeStatus($value, $actor);
                     }
                 }),
 
@@ -221,7 +225,7 @@ class SupportTicketResource extends AbstractDatabaseResource
                     if (! $isStaff) {
                         return;
                     }
-                    $ticket->decision = $value;
+                    $ticket->changeDecision($value, $actor);
                 }),
 
             Schema\DateTime::make('createdAt')
@@ -375,7 +379,7 @@ class SupportTicketResource extends AbstractDatabaseResource
                         return;
                     }
                     if ($value === null) {
-                        $ticket->assigned_staff_id = null;
+                        $ticket->assignTo(null, $actor);
                         return;
                     }
                     $targetId = null;
@@ -396,7 +400,7 @@ class SupportTicketResource extends AbstractDatabaseResource
                     if (! $target || ! SupportAbilities::isStaff($target)) {
                         throw new BadRequestException($this->translator->trans('linkrobins-support.api.assign_staff_only'));
                     }
-                    $ticket->assigned_staff_id = $targetId;
+                    $ticket->assignTo($target, $actor);
                 }),
 
             Schema\Relationship\ToOne::make('category')
@@ -659,11 +663,6 @@ class SupportTicketResource extends AbstractDatabaseResource
             }
         }
 
-        // Credit status and assignment changes in the ticket timeline to the
-        // person making this request (see SupportEvent::recordChanges).
-        $model->eventActor = $actor->isGuest() ? null : $actor;
-        $model->eventActorId = $actor->isGuest() ? null : (int) $actor->id;
-
         $this->before[(int) $model->id] = [
             'status' => $model->getOriginal('status'),
             'assignee' => $model->getOriginal('assigned_staff_id') === null
@@ -718,6 +717,32 @@ class SupportTicketResource extends AbstractDatabaseResource
         }
 
         return $model;
+    }
+
+    public function updated(object $model, Context $context): ?object
+    {
+        /** @var SupportTicket $model */
+        if ($model->wasChanged()) {
+            $actor = $context->getActor();
+            $model->raise(new TicketChanged($model, $actor->isGuest() ? null : $actor));
+        }
+
+        return $model;
+    }
+
+    /**
+     * Dispatch raised domain events after commit with per-listener isolation so a
+     * failing listener never causes the API request to return 500 after saving.
+     */
+    public function dispatchEventsFor(mixed $entity, ?User $actor = null): void
+    {
+        if (! method_exists($entity, 'releaseEvents')) {
+            return;
+        }
+
+        foreach ($entity->releaseEvents() as $event) {
+            SupportServiceProvider::dispatchAfterCommit($this->events, $event, $this->log);
+        }
     }
 
     /**
