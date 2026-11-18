@@ -181,7 +181,7 @@ export default class SupportAdminPage extends ExtensionPage {
     if (category.isSilent && category.isSilent()) {
       return (
         <span className="LinkRobinsSupportAdmin-noAssignee">
-          <i className="fas fa-bell-slash" style={{ marginRight: '4px' }} />
+          <i className="fas fa-bell-slash" style={{ marginInlineEnd: '4px' }} />
           {app.translator.trans('linkrobins-support.admin.categories.assignee_silent')}
         </span>
       );
@@ -191,7 +191,7 @@ export default class SupportAdminPage extends ExtensionPage {
       const gName = group.namePlural() || group.nameSingular() || '#' + group.id();
       return (
         <span>
-          <i className="fas fa-users" style={{ marginRight: '4px' }} />
+          <i className="fas fa-users" style={{ marginInlineEnd: '4px' }} />
           {gName}
         </span>
       );
@@ -204,7 +204,7 @@ export default class SupportAdminPage extends ExtensionPage {
     }
     return (
       <span>
-        <i className="fas fa-user" style={{ marginRight: '4px' }} />
+        <i className="fas fa-user" style={{ marginInlineEnd: '4px' }} />
         {user.displayName() || user.username()}
       </span>
     );

@@ -26,6 +26,7 @@ export default class CategoryEditorModal extends FormModal<any> {
   ticketType = 'standard';
   allowedGroupIds: string[] = [];
   routingMode: 'all' | 'group' | 'user' | 'silent' = 'all';
+  isSilent = false;
   defaultAssigneeId = '';
   defaultAssignedGroupId = '';
   staff: any[] = [];
@@ -49,6 +50,7 @@ export default class CategoryEditorModal extends FormModal<any> {
     const allowed = category && category.attribute('allowedGroupIds');
     this.allowedGroupIds = Array.isArray(allowed) ? allowed.map(String) : [];
     const isSilent = Boolean(category && (category.isSilent ? category.isSilent() : category.attribute('isSilent')));
+    this.isSilent = isSilent;
     const assignee = category && category.defaultAssignee && category.defaultAssignee();
     this.defaultAssigneeId = assignee ? String(assignee.id()) : '';
     const group = category && category.defaultAssignedGroup && category.defaultAssignedGroup();
@@ -391,6 +393,7 @@ export default class CategoryEditorModal extends FormModal<any> {
 
   _changeRoutingMode(mode: 'all' | 'group' | 'user' | 'silent') {
     this.routingMode = mode;
+    this.isSilent = mode === 'silent';
     if (mode === 'all' || mode === 'silent') {
       this.defaultAssigneeId = '';
       this.defaultAssignedGroupId = '';
@@ -445,7 +448,7 @@ export default class CategoryEditorModal extends FormModal<any> {
 
     if (this.defaultAssignedGroupId && !options[this.defaultAssignedGroupId]) {
       options[this.defaultAssignedGroupId] = extractText(
-        app.translator.trans('linkrobins-support.admin.category_editor.field_default_assignee_unavailable', {
+        app.translator.trans('linkrobins-support.admin.category_editor.field_target_group_unavailable', {
           name: '#' + this.defaultAssignedGroupId,
         })
       );
@@ -510,9 +513,9 @@ export default class CategoryEditorModal extends FormModal<any> {
     this.error = null;
     m.redraw();
 
-    const isSilent = this.routingMode === 'silent';
-    const assigneeId = this.routingMode === 'user' ? this.defaultAssigneeId : '';
-    const groupId = this.routingMode === 'group' ? this.defaultAssignedGroupId : '';
+    const isSilent = this.isSilent;
+    const assigneeId = this.defaultAssigneeId;
+    const groupId = this.defaultAssignedGroupId;
 
     const attrs: any = {
       name: this.name.trim(),
