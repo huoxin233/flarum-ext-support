@@ -64,8 +64,14 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 
+    // Beat core's `.ComposerBody-header h3 .icon` (margin-right: 3px) so the
+    // icon gap matches core's `3px + literal space` (~6.5px) without JSX spacing.
+    .ComposerBody-header & .icon,
+    .ComposerBody-header & i,
+    .icon,
     i {
         color: var(--primary-color, #07adcc);
+        margin-inline-end: 6.5px;
     }
 }
 
@@ -408,6 +414,9 @@
 }
 
 .LinkRobinsSupport-decision {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     font-size: 0.9rem;
     margin-top: 4px;
 
