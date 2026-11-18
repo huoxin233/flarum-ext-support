@@ -377,8 +377,11 @@ class TicketThrottleTest extends TestCase
         $this->assertFalse($cache->has($cacheKey));
 
         // 4. Changing a category's ticket_type clears cache for users with tickets in that category.
+        $generalCacheKey = 'linkrobins_support.quota.general.2.24h';
+        $rateLimiter->check($user, $appealCategory);
         $rateLimiter->check($user, $generalCategory);
         $this->assertTrue($cache->has($cacheKey));
+        $this->assertTrue($cache->has($generalCacheKey));
         $typeChange = $this->send(
             $this->request('PATCH', '/api/linkrobins-support-categories/2', [
                 'authenticatedAs' => 1,
@@ -387,6 +390,7 @@ class TicketThrottleTest extends TestCase
         );
         $this->assertEquals(200, $typeChange->getStatusCode());
         $this->assertFalse($cache->has($cacheKey));
+        $this->assertFalse($cache->has($generalCacheKey));
 
         // 5. Force-delete clears cache.
         $this->send(
