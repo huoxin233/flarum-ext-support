@@ -298,6 +298,8 @@ class CategoryRoutingNotificationTest extends TestCase
         );
         $this->assertEquals(200, $response1->getStatusCode());
         $this->assertEquals(1, (int) $this->database()->table('linkrobins_support_categories')->where('id', 1)->value('is_silent'));
+        $data1 = json_decode((string) $response1->getBody(), true)['data'];
+        $this->assertTrue($data1['attributes']['isSilent']);
 
         // 2. Route to group
         $response2 = $this->send(
@@ -798,7 +800,19 @@ class CategoryRoutingNotificationTest extends TestCase
                 ],
             ])
         );
-        $this->assertEquals(400, $invalidGroupResponse->getStatusCode(), (string) $invalidGroupResponse->getBody());
+        $this->assertEquals(404, $invalidGroupResponse->getStatusCode(), (string) $invalidGroupResponse->getBody());
+        $this->assertNull($this->database()->table('linkrobins_support_categories')->where('id', 1)->value('default_assigned_group_id'));
+
+        // Guests must not see isSilent or defaultAssignedGroup.
+        $guestResponse = $this->send(
+            $this->request('GET', '/api/linkrobins-support-categories')
+        );
+        $this->assertEquals(200, $guestResponse->getStatusCode(), (string) $guestResponse->getBody());
+        $guestBody = json_decode((string) $guestResponse->getBody(), true);
+        foreach ($guestBody['data'] as $category) {
+            $this->assertArrayNotHasKey('isSilent', $category['attributes'] ?? []);
+            $this->assertArrayNotHasKey('defaultAssignedGroup', $category['relationships'] ?? []);
+        }
 
         // Non-staff user must not see isSilent or defaultAssignedGroup.
         $nonStaffResponse = $this->send(
@@ -822,5 +836,21 @@ class CategoryRoutingNotificationTest extends TestCase
         $cat3 = $staffCategories->firstWhere('id', '3');
         $this->assertTrue($cat2['attributes']['isSilent'] ?? false);
         $this->assertEquals('101', $cat3['relationships']['defaultAssignedGroup']['data']['id'] ?? null);
+    }
+
+    #[Test]
+    public function unassigned_ticket_in_normal_category_notifies_all_staff(): void
+    {
+        $ticketId = $this->openTicketIn(1);
+
+        $recipients = $this->database()->table('notifications')
+            ->where('subject_id', $ticketId)
+            ->where('type', 'linkrobinsSupportNewTicket')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        sort($recipients);
+
+        $this->assertEquals([1, 3, 4, 5], $recipients, 'Unassigned ticket in a normal category should notify all staff.');
     }
 }
