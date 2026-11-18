@@ -580,7 +580,247 @@ class CategoryRoutingNotificationTest extends TestCase
             ->map(fn ($id) => (int) $id)
             ->all();
 
-        // User 5 filed the ticket, so they shouldn't be notified about their own ticket
-        $this->assertNotContains(5, $recipients, 'Author filing ticket into their own group must not be notified.');
+        // User 5 is the sole staff member in Billing and also the ticket author:
+        // self-suppression must leave zero recipients rather than broadcasting to all staff.
+        $this->assertEmpty($recipients, 'Sole staff member in a routed group filing a ticket must not self-notify or fall back to all staff.');
+
+        // When another staff member (User 4) is also in Billing, only User 4 should be notified.
+        $this->database()->table('group_user')->insert([
+            'user_id' => 4,
+            'group_id' => 101,
+        ]);
+
+        $secondTicketId = $this->openTicketIn(3, actorId: 5);
+
+        $secondRecipients = $this->database()->table('notifications')
+            ->where('subject_id', $secondTicketId)
+            ->where('type', 'linkrobinsSupportNewTicket')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        sort($secondRecipients);
+
+        $this->assertEquals([4], $secondRecipients, 'Opening a ticket into a multi-member routed group should notify only the other group members.');
+    }
+
+    #[Test]
+    public function unassigning_or_demoting_assignee_in_silent_category_falls_back_to_silent(): void
+    {
+        $ticketId = $this->openTicketIn(2);
+
+        // 1. Explicitly assigning a ticket in a silent category notifies the assignee.
+        $assignResponse = $this->send(
+            $this->request('PATCH', "/api/linkrobins-support-tickets/{$ticketId}", [
+                'authenticatedAs' => 1,
+                'json' => [
+                    'data' => [
+                        'relationships' => [
+                            'assignedStaff' => ['data' => ['type' => 'users', 'id' => '3']],
+                        ],
+                    ],
+                ],
+            ])
+        );
+        $this->assertEquals(200, $assignResponse->getStatusCode(), (string) $assignResponse->getBody());
+
+        $assignedRecipients = $this->database()->table('notifications')
+            ->where('subject_id', $ticketId)
+            ->where('type', 'linkrobinsSupportTicketAssigned')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $this->assertEquals([3], $assignedRecipients, 'Explicit assignment in a silent category must notify the assignee.');
+
+        // 2. Unassigning falls back to silent mode (no all-staff broadcast on reply).
+        $this->database()->table('notifications')->delete();
+        $unassignResponse = $this->send(
+            $this->request('PATCH', "/api/linkrobins-support-tickets/{$ticketId}", [
+                'authenticatedAs' => 1,
+                'json' => [
+                    'data' => [
+                        'relationships' => [
+                            'assignedStaff' => ['data' => null],
+                        ],
+                    ],
+                ],
+            ])
+        );
+        $this->assertEquals(200, $unassignResponse->getStatusCode(), (string) $unassignResponse->getBody());
+
+        $this->postReply($ticketId, 2, 'Reply after unassign');
+        $this->assertEquals(
+            0,
+            $this->database()->table('notifications')->where('type', 'linkrobinsSupportNewReply')->count(),
+            'Unassigned ticket in silent category must fall back to silent after unassigning.'
+        );
+
+        // 3. Re-assigning to a user who subsequently loses staff permissions also falls back to silent.
+        $this->database()->table('linkrobins_support_tickets')->where('id', $ticketId)->update(['assigned_staff_id' => 3]);
+        $this->database()->table('group_user')->where('user_id', 3)->delete();
+        $this->database()->table('notifications')->delete();
+
+        $this->postReply($ticketId, 2, 'Reply after assignee demotion');
+        $this->assertEquals(
+            0,
+            $this->database()->table('notifications')->where('type', 'linkrobinsSupportNewReply')->count(),
+            'Demoted assignee in silent category must fall back to silent rather than broadcasting to all staff.'
+        );
+    }
+
+    #[Test]
+    public function staff_reply_auto_claims_group_routed_ticket_and_narrows_future_replies(): void
+    {
+        $this->database()->table('group_user')->insert([
+            'user_id' => 4,
+            'group_id' => 101,
+        ]);
+
+        $ticketId = $this->openTicketIn(3);
+
+        $newTicketRecipients = $this->database()->table('notifications')
+            ->where('subject_id', $ticketId)
+            ->where('type', 'linkrobinsSupportNewTicket')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        sort($newTicketRecipients);
+        $this->assertEquals([4, 5], $newTicketRecipients, 'New ticket should notify both members of the routed Billing group.');
+
+        // User 5 replies first and auto-claims the ticket.
+        $this->database()->table('notifications')->delete();
+        $this->postReply($ticketId, 5, 'I will take this');
+
+        $staffReplyRecipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportNewReply')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $this->assertEquals([2], $staffReplyRecipients, 'Staff reply should notify the ticket owner.');
+
+        // Subsequent user reply must go only to the claiming assignee (User 5), not User 4.
+        $this->database()->table('notifications')->delete();
+        $this->postReply($ticketId, 2, 'Thanks User 5');
+
+        $followUpRecipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportNewReply')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $this->assertEquals([5], $followUpRecipients, 'User follow-up after auto-claim must notify only the claiming staff member.');
+    }
+
+    #[Test]
+    public function demoted_assignee_in_group_routed_category_falls_back_to_routed_group(): void
+    {
+        $ticketId = $this->openTicketIn(3);
+
+        $this->database()->table('linkrobins_support_tickets')->where('id', $ticketId)->update(['assigned_staff_id' => 3]);
+        $this->database()->table('group_user')->where('user_id', 3)->delete();
+        $this->database()->table('notifications')->delete();
+
+        $this->postReply($ticketId, 2, 'Reply after assignee lost staff group');
+
+        $replyRecipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportNewReply')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        sort($replyRecipients);
+
+        $this->assertEquals([5], $replyRecipients, 'Demoted assignee in a group-routed category should fall back to the routed group, not all staff.');
+    }
+
+    #[Test]
+    public function staff_replying_to_own_unassigned_ticket_in_routed_group_does_not_self_notify_or_broadcast(): void
+    {
+        $ticketId = $this->openTicketIn(3, actorId: 5);
+
+        $this->database()->table('linkrobins_support_tickets')->where('id', $ticketId)->update(['assigned_staff_id' => null]);
+        $this->database()->table('notifications')->delete();
+
+        $this->postReply($ticketId, 5, 'Adding more context');
+
+        $this->assertEquals(
+            0,
+            $this->database()->table('notifications')->where('type', 'linkrobinsSupportNewReply')->count(),
+            'Sole group staff replying to their own unassigned ticket must neither self-notify nor broadcast to all staff.'
+        );
+    }
+
+    #[Test]
+    public function status_changes_in_silent_and_group_routed_categories_respect_routing(): void
+    {
+        // Silent category: resolving notifies owner [2], owner confirming solved notifies nobody.
+        $silentTicketId = $this->openTicketIn(2);
+        $this->assertEquals(200, $this->setStatus(3, 'resolved', $silentTicketId));
+
+        $silentResolveRecipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportTicketStatusChanged')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $this->assertEquals([2], $silentResolveRecipients, 'Staff resolving a silent ticket must still notify the ticket owner.');
+
+        $this->database()->table('notifications')->delete();
+        $this->assertEquals(200, $this->setStatus(2, 'closed', $silentTicketId));
+        $this->assertEquals(
+            0,
+            $this->database()->table('notifications')->where('type', 'linkrobinsSupportTicketStatusChanged')->count(),
+            'Owner confirming solved in a silent category must not notify staff.'
+        );
+
+        // Group-routed category: owner confirming solved notifies only that group ([5]).
+        $billingTicketId = $this->openTicketIn(3);
+        $this->assertEquals(200, $this->setStatus(5, 'resolved', $billingTicketId));
+        $this->database()->table('notifications')->delete();
+
+        $this->assertEquals(200, $this->setStatus(2, 'closed', $billingTicketId));
+        $billingCloseRecipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportTicketStatusChanged')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $this->assertEquals([5], $billingCloseRecipients, 'Owner confirming solved in a group-routed category must notify only the routed group.');
+    }
+
+    #[Test]
+    public function routing_fields_are_staff_only_and_reject_nonexistent_group(): void
+    {
+        $invalidGroupResponse = $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-categories/1', [
+                'authenticatedAs' => 1,
+                'json' => [
+                    'data' => [
+                        'relationships' => [
+                            'defaultAssignedGroup' => ['data' => ['type' => 'groups', 'id' => '999']],
+                        ],
+                    ],
+                ],
+            ])
+        );
+        $this->assertEquals(400, $invalidGroupResponse->getStatusCode(), (string) $invalidGroupResponse->getBody());
+
+        // Non-staff user must not see isSilent or defaultAssignedGroup.
+        $nonStaffResponse = $this->send(
+            $this->request('GET', '/api/linkrobins-support-categories', ['authenticatedAs' => 2])
+        );
+        $this->assertEquals(200, $nonStaffResponse->getStatusCode(), (string) $nonStaffResponse->getBody());
+        $nonStaffBody = json_decode((string) $nonStaffResponse->getBody(), true);
+        foreach ($nonStaffBody['data'] as $category) {
+            $this->assertArrayNotHasKey('isSilent', $category['attributes'] ?? []);
+            $this->assertArrayNotHasKey('defaultAssignedGroup', $category['relationships'] ?? []);
+        }
+
+        // Staff user sees routing attributes and relationships.
+        $staffResponse = $this->send(
+            $this->request('GET', '/api/linkrobins-support-categories', ['authenticatedAs' => 3])
+        );
+        $this->assertEquals(200, $staffResponse->getStatusCode(), (string) $staffResponse->getBody());
+        $staffCategories = collect(json_decode((string) $staffResponse->getBody(), true)['data']);
+
+        $cat2 = $staffCategories->firstWhere('id', '2');
+        $cat3 = $staffCategories->firstWhere('id', '3');
+        $this->assertTrue($cat2['attributes']['isSilent'] ?? false);
+        $this->assertEquals('101', $cat3['relationships']['defaultAssignedGroup']['data']['id'] ?? null);
     }
 }
