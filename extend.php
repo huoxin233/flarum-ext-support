@@ -9,7 +9,10 @@ use LinkRobins\Support\Api\Resource\SupportEventResource;
 use LinkRobins\Support\Console\CloseResolvedTicketsCommand;
 use LinkRobins\Support\Console\HourlySchedule;
 use LinkRobins\Support\Event\ReplyPosted;
+use LinkRobins\Support\Event\TicketAssigned;
 use LinkRobins\Support\Event\TicketChanged;
+use LinkRobins\Support\Event\TicketDecided;
+use LinkRobins\Support\Event\TicketStatusChanged;
 use LinkRobins\Support\Api\Resource\SupportCategoryResource;
 use LinkRobins\Support\Api\Resource\SupportReplyResource;
 use LinkRobins\Support\Api\Resource\SupportTicketResource;
@@ -22,6 +25,10 @@ use LinkRobins\Support\Search\EventSearcher;
 use LinkRobins\Support\Search\ReplySearcher;
 use LinkRobins\Support\Search\TicketSearcher;
 use LinkRobins\Support\Extend as SupportExtend;
+use LinkRobins\Support\Listener\NotifyTicketTypeDecision;
+use LinkRobins\Support\Listener\NotifyTicketTypeStatusChange;
+use LinkRobins\Support\Listener\RecordAssignmentTimeline;
+use LinkRobins\Support\Listener\RecordStatusChangeTimeline;
 use LinkRobins\Support\SupportCategory;
 use LinkRobins\Support\SupportEvent;
 use LinkRobins\Support\SupportReply;
@@ -264,7 +271,11 @@ return [
             ], true)) {
                 $event->value = $event->value === '' || $event->value === '0' ? '0' : '1';
             }
-        }),
+        })
+        ->listen(TicketStatusChanged::class, RecordStatusChangeTimeline::class)
+        ->listen(TicketStatusChanged::class, NotifyTicketTypeStatusChange::class)
+        ->listen(TicketAssigned::class, RecordAssignmentTimeline::class)
+        ->listen(TicketDecided::class, NotifyTicketTypeDecision::class),
 
     (new Extend\Settings())
         ->default('linkrobins-support.nav_in_sidebar',             '1')

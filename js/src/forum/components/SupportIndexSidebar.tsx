@@ -6,7 +6,7 @@ import SelectDropdown from 'flarum/common/components/SelectDropdown';
 import ItemList from 'flarum/common/utils/ItemList';
 import Separator from 'flarum/common/components/Separator';
 import extractText from 'flarum/common/utils/extractText';
-import { basePath, BASE_PATH, safeNavigate, showForumNavOnSupportPages, isGuest } from '../utils/helpers';
+import { showForumNavOnSupportPages, isGuest } from '../utils/helpers';
 import { canCreateSupportTicket, canHandleSupportTickets } from '../utils/permissions';
 import { FILTER_OPTIONS, filterLabel, filterHrefFor } from '../utils/status';
 import { refreshCounts, supportCount, COUNT_FOR_FILTER } from '../utils/counts';
@@ -55,7 +55,6 @@ export default class SupportIndexSidebar extends IndexSidebar<any> {
     // Guests see the button too: tapping it opens the log-in modal and, once
     // they are in, takes them to the form.
     if (isGuest() || canCreateSupportTicket()) {
-      const newHref = basePath() + BASE_PATH + '/new';
       items.add(
         'newTicket',
         <Button
@@ -67,10 +66,10 @@ export default class SupportIndexSidebar extends IndexSidebar<any> {
           onclick={(e: any) => {
             if (isGuest()) {
               if (e && e.preventDefault) e.preventDefault();
-              promptLogIn(BASE_PATH + '/new');
+              promptLogIn(app.route('linkrobins-support.compose'));
               return;
             }
-            safeNavigate(newHref, e);
+            m.route.set(app.route('linkrobins-support.compose'));
           }}
         >
           {app.translator.trans('linkrobins-support.forum.index.new_ticket')}
