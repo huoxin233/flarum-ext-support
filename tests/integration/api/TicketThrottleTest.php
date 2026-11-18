@@ -12,8 +12,14 @@ namespace LinkRobins\Support\Tests\integration\api;
 use Carbon\Carbon;
 use Flarum\Testing\integration\RetrievesAuthorizedUsers;
 use Flarum\Testing\integration\TestCase;
+use Flarum\User\Guest;
 use Illuminate\Cache\RateLimiter as CacheRateLimiter;
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Laminas\Diactoros\ServerRequest;
+use LinkRobins\Support\RateLimiter as SupportRateLimiter;
+use LinkRobins\Support\SupportCategory;
+use LinkRobins\Support\SupportTicket;
+use LinkRobins\Support\Throttler\TicketCreationThrottler;
 use PHPUnit\Framework\Attributes\Test;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -133,7 +139,7 @@ class TicketThrottleTest extends TestCase
         $this->assertEquals(201, $response1->getStatusCode());
 
         // An immediate repeat attempt by the same actor must be stopped at the
-        // middleware layer with 429 Too Many Requests before any database write.
+        // middleware layer with 429 Too Many Requests and a detail message.
         $response2 = $this->send(
             $this->request('POST', '/api/linkrobins-support-tickets', [
                 'authenticatedAs' => 2,
@@ -142,12 +148,16 @@ class TicketThrottleTest extends TestCase
         );
         $this->assertEquals(429, $response2->getStatusCode());
 
+        $body2 = json_decode((string) $response2->getBody(), true);
+        $this->assertSame('too_many_requests', $body2['errors'][0]['code'] ?? null);
+        $this->assertNotEmpty($body2['errors'][0]['detail'] ?? null);
+
         // Exactly 1 new ticket was created (1 from fixture + 1 from first request).
         $this->assertEquals(2, $this->database()->table('linkrobins_support_tickets')->count());
     }
 
     #[Test]
-    public function normal_user_rapid_reply_is_throttled(): void
+    public function normal_user_rapid_replies_are_not_throttled(): void
     {
         $response1 = $this->send(
             $this->request('POST', '/api/linkrobins-support-replies', [
@@ -157,17 +167,63 @@ class TicketThrottleTest extends TestCase
         );
         $this->assertEquals(201, $response1->getStatusCode());
 
-        // Rapid repeat reply is blocked by the anti-flood throttler.
+        // Rapid repeat replies must not be blocked by the ticket-creation cooldown.
         $response2 = $this->send(
             $this->request('POST', '/api/linkrobins-support-replies', [
                 'authenticatedAs' => 2,
                 'json' => $this->replyBody(1, 'Reply 2'),
             ])
         );
-        $this->assertEquals(429, $response2->getStatusCode());
+        $this->assertEquals(201, $response2->getStatusCode());
 
-        // Exactly 1 new reply was created (1 from fixture + 1 from first request).
-        $this->assertEquals(2, $this->database()->table('linkrobins_support_replies')->count());
+        $this->assertEquals(3, $this->database()->table('linkrobins_support_replies')->count());
+    }
+
+    #[Test]
+    public function failed_validation_does_not_burn_throttle_cooldown(): void
+    {
+        $invalidResponse = $this->send(
+            $this->request('POST', '/api/linkrobins-support-tickets', [
+                'authenticatedAs' => 2,
+                'json' => $this->ticketBody('', 'Valid body'),
+            ])
+        );
+        $this->assertContains($invalidResponse->getStatusCode(), [400, 422]);
+
+        // Corrected retry immediately after validation failure must succeed.
+        $validResponse = $this->send(
+            $this->request('POST', '/api/linkrobins-support-tickets', [
+                'authenticatedAs' => 2,
+                'json' => $this->ticketBody('Corrected Subject', 'Valid body'),
+            ])
+        );
+        $this->assertEquals(201, $validResponse->getStatusCode());
+    }
+
+    #[Test]
+    public function quota_refusal_does_not_burn_throttle_cooldown(): void
+    {
+        $this->setting('linkrobins-support.general_limit_per_window', '1');
+        $this->setting('linkrobins-support.general_window_hours', '24');
+
+        // User 2 already owns ticket #1 from setUp -> quota refusal (403).
+        $refused = $this->send(
+            $this->request('POST', '/api/linkrobins-support-tickets', [
+                'authenticatedAs' => 2,
+                'json' => $this->ticketBody('Over quota', 'Content'),
+            ])
+        );
+        $this->assertEquals(403, $refused->getStatusCode());
+
+        // Raise quota and immediately retry: the 403 must not have started a 429 cooldown.
+        $this->setting('linkrobins-support.general_limit_per_window', '10');
+        $allowed = $this->send(
+            $this->request('POST', '/api/linkrobins-support-tickets', [
+                'authenticatedAs' => 2,
+                'json' => $this->ticketBody('Now allowed', 'Content'),
+            ])
+        );
+        $this->assertEquals(201, $allowed->getStatusCode());
     }
 
     #[Test]
@@ -238,11 +294,13 @@ class TicketThrottleTest extends TestCase
     {
         $ip = '198.51.100.1';
 
-        // First guest attempt records an anti-flood hit keyed by sha1(REMOTE_ADDR).
-        $response1 = $this->send(
-            $this->guestRequest('POST', '/api/linkrobins-support-tickets', $this->ticketBody('Guest Ticket 1', 'Content'), $ip)
-        );
+        // A rejected guest attempt (401/403) must not record an anti-flood hit.
+        $req1 = $this->guestRequest('POST', '/api/linkrobins-support-tickets', $this->ticketBody('Guest Ticket 1', 'Content'), $ip);
+        $response1 = $this->send($req1);
         $this->assertNotEquals(429, $response1->getStatusCode());
+
+        // Record a hit for that IP (simulating a successful IP-keyed submission).
+        $this->app()->getContainer()->make(TicketCreationThrottler::class)->recordHit($req1, new Guest());
 
         // Rapid repeat attempt by the same guest IP is throttled with 429.
         $response2 = $this->send(
@@ -255,6 +313,94 @@ class TicketThrottleTest extends TestCase
             $this->guestRequest('POST', '/api/linkrobins-support-tickets', $this->ticketBody('Other Guest Ticket', 'Content'), '198.51.100.2')
         );
         $this->assertNotEquals(429, $response3->getStatusCode());
+    }
+
+    #[Test]
+    public function quota_cache_is_cleared_on_delete_restore_category_and_type_changes(): void
+    {
+        $container = $this->app()->getContainer();
+        /** @var CacheRepository $cache */
+        $cache = $container->make(CacheRepository::class);
+        /** @var SupportRateLimiter $rateLimiter */
+        $rateLimiter = $container->make(SupportRateLimiter::class);
+
+        $user = \Flarum\User\User::findOrFail(2);
+        $generalCategory = SupportCategory::findOrFail(1);
+        $appealCategory = SupportCategory::findOrFail(2);
+        $cacheKey = 'linkrobins_support.quota.open_appeals.2';
+
+        // Warm user 2's quota cache.
+        $rateLimiter->check($user, $appealCategory);
+        $this->assertTrue($cache->has($cacheKey));
+
+        // 1. Soft-delete via PATCH isDeleted=true clears cache.
+        $softDelete = $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-tickets/1', [
+                'authenticatedAs' => 3,
+                'json' => ['data' => ['attributes' => ['isDeleted' => true]]],
+            ])
+        );
+        $this->assertEquals(200, $softDelete->getStatusCode());
+        $this->assertFalse($cache->has($cacheKey));
+
+        // 2. Restore via PATCH isDeleted=false clears cache.
+        $rateLimiter->check($user, $appealCategory);
+        $this->assertTrue($cache->has($cacheKey));
+        $restore = $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-tickets/1', [
+                'authenticatedAs' => 3,
+                'json' => ['data' => ['attributes' => ['isDeleted' => false]]],
+            ])
+        );
+        $this->assertEquals(200, $restore->getStatusCode());
+        $this->assertFalse($cache->has($cacheKey));
+
+        // 3. Moving ticket to another category clears cache.
+        $rateLimiter->check($user, $appealCategory);
+        $this->assertTrue($cache->has($cacheKey));
+        $moveCategory = $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-tickets/1', [
+                'authenticatedAs' => 3,
+                'json' => [
+                    'data' => [
+                        'relationships' => [
+                            'category' => ['data' => ['type' => 'linkrobins-support-categories', 'id' => '2']],
+                        ],
+                    ],
+                ],
+            ])
+        );
+        $this->assertEquals(200, $moveCategory->getStatusCode());
+        $this->assertFalse($cache->has($cacheKey));
+
+        // 4. Changing a category's ticket_type clears cache for users with tickets in that category.
+        $rateLimiter->check($user, $generalCategory);
+        $this->assertTrue($cache->has($cacheKey));
+        $typeChange = $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-categories/2', [
+                'authenticatedAs' => 1,
+                'json' => ['data' => ['attributes' => ['ticketType' => 'standard']]],
+            ])
+        );
+        $this->assertEquals(200, $typeChange->getStatusCode());
+        $this->assertFalse($cache->has($cacheKey));
+
+        // 5. Force-delete clears cache.
+        $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-tickets/1', [
+                'authenticatedAs' => 3,
+                'json' => ['data' => ['attributes' => ['isDeleted' => true]]],
+            ])
+        );
+        $rateLimiter->check($user, $appealCategory);
+        $this->assertTrue($cache->has($cacheKey));
+        $forceDelete = $this->send(
+            $this->request('DELETE', '/api/linkrobins-support-tickets/1', [
+                'authenticatedAs' => 1,
+            ])
+        );
+        $this->assertEquals(204, $forceDelete->getStatusCode());
+        $this->assertFalse($cache->has($cacheKey));
     }
 
     #[Test]
