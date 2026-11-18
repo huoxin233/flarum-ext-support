@@ -52,9 +52,11 @@ export default class CategoryEditorModal extends FormModal<any> {
     const isSilent = Boolean(category && (category.isSilent ? category.isSilent() : category.attribute('isSilent')));
     this.isSilent = isSilent;
     const assignee = category && category.defaultAssignee && category.defaultAssignee();
-    this.defaultAssigneeId = assignee ? String(assignee.id()) : '';
+    const rawAssigneeId = category?.data?.relationships?.defaultAssignee?.data?.id;
+    this.defaultAssigneeId = assignee ? String(assignee.id()) : rawAssigneeId ? String(rawAssigneeId) : '';
     const group = category && category.defaultAssignedGroup && category.defaultAssignedGroup();
-    this.defaultAssignedGroupId = group ? String(group.id()) : '';
+    const rawGroupId = category?.data?.relationships?.defaultAssignedGroup?.data?.id;
+    this.defaultAssignedGroupId = group ? String(group.id()) : rawGroupId ? String(rawGroupId) : '';
 
     if (isSilent) {
       this.routingMode = 'silent';
@@ -570,7 +572,7 @@ export default class CategoryEditorModal extends FormModal<any> {
     for (let i = 0; i < this.staff.length; i++) {
       if (String(this.staff[i].id()) === String(id)) return this.staff[i];
     }
-    return this._currentAssignee();
+    return this._currentAssignee() || { data: { type: 'users', id: String(id) } };
   }
 
   // Delete from within the editor (parity with the Tags "New Tag" modal).
