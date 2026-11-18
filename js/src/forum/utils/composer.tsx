@@ -15,7 +15,8 @@ import { showError } from './helpers';
  */
 export function installComposerControls(): void {
   extend(TextEditor.prototype, 'controlItems', function (items) {
-    const supportComposer = this.attrs && (this.attrs.composer as any)?._supportComposer;
+    const attrs = this.attrs as any;
+    const supportComposer = attrs?.composer?._supportComposer;
     if (!supportComposer) return;
 
     const isInternal = !!supportComposer.isInternal;
@@ -29,7 +30,7 @@ export function installComposerControls(): void {
           icon="fas fa-lock"
           aria-label={label}
           aria-pressed={isInternal ? 'true' : 'false'}
-          disabled={this.attrs.disabled}
+          disabled={attrs.disabled}
           onclick={() => {
             supportComposer.isInternal = !supportComposer.isInternal;
           }}
@@ -45,7 +46,7 @@ export function installComposerControls(): void {
           className="Button Button--primary TextEditor-send LinkRobinsSupport-btn--internal"
           itemClassName="App-primaryControl"
           icon="fas fa-lock"
-          disabled={this.attrs.disabled}
+          disabled={attrs.disabled}
           onclick={this.onsubmit.bind(this)}
         >
           {app.translator.trans('linkrobins-support.forum.reply.internal_note')}
