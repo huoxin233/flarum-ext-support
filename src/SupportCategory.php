@@ -88,8 +88,8 @@ class SupportCategory extends AbstractModel
 
     /**
      * The staff member new tickets in this category are handed to. Null means
-     * no auto-assign: tickets arrive unassigned and every staff member is
-     * notified about them.
+     * no auto-assign: tickets arrive unassigned and follow the category's
+     * routing (silent, target group, or all staff).
      *
      * @return BelongsTo<User, $this>
      */
@@ -105,9 +105,10 @@ class SupportCategory extends AbstractModel
      * set up -- moved out of a group, permission revoked, account deleted --
      * and auto-assigning to them then would park every new ticket on someone
      * who cannot open it, with only that person notified. Treat that exactly
-     * like no auto-assign at all: the ticket stays unassigned and the whole
-     * staff list hears about it. Failing open is the only safe direction
-     * here, because the alternative is a ticket nobody is told about.
+     * like no auto-assign at all: the ticket stays unassigned and falls back to
+     * the category's routing (silent, target group, or all staff). Failing
+     * open when not silent is the only safe direction here, because the
+     * alternative is a ticket nobody is told about.
      */
     public function effectiveDefaultAssignee(): ?User
     {

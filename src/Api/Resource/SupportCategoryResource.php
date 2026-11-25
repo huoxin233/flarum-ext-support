@@ -218,7 +218,8 @@ class SupportCategoryResource extends AbstractDatabaseResource
             // Who new tickets in this category are handed to, and therefore
             // the only person notified about them. Null (the default, and what
             // every category has after upgrading) means no auto-assign:
-            // tickets arrive unassigned and all staff are notified.
+            // tickets arrive unassigned and follow the category's routing
+            // (silent, target group, or all staff).
             //
             // Staff-only: which human is behind a queue is internal routing,
             // and the category list is public to anyone opening a ticket.
