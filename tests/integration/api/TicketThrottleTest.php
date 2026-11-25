@@ -350,14 +350,14 @@ class TicketThrottleTest extends TestCase
         $response1 = $this->send(
             $this->request('POST', '/api/linkrobins-support-tickets', [
                 'json' => $this->ticketBody('Guest Ticket 1', 'Content'),
-            ])
+            ])->withAttribute('bypassCsrfToken', true)
         );
         $this->assertContains($response1->getStatusCode(), [401, 403]);
 
         $response2 = $this->send(
             $this->request('POST', '/api/linkrobins-support-tickets', [
                 'json' => $this->ticketBody('Guest Ticket 2', 'Content'),
-            ])
+            ])->withAttribute('bypassCsrfToken', true)
         );
         $this->assertContains($response2->getStatusCode(), [401, 403]);
     }

@@ -211,13 +211,16 @@ class RateLimiter
         return $this->ticketTypeManager->appealIds() ?: [AppealTicketType::ID];
     }
 
-    protected function rememberCount(string $key, bool $fresh, callable $query): int
+    /**
+     * @param \Closure(): int $query
+     */
+    protected function rememberCount(string $key, bool $fresh, \Closure $query): int
     {
         if ($fresh) {
             return (int) $query();
         }
 
-        return (int) $this->cache->remember($key, self::CACHE_TTL, $query);
+        return $this->cache->remember($key, self::CACHE_TTL, fn (): int => (int) $query());
     }
 
     protected function countOpenAppealsForUser(User $actor, bool $fresh = false): int
