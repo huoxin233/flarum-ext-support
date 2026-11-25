@@ -7,7 +7,6 @@ use Flarum\Api\Endpoint;
 use Flarum\Api\Resource\AbstractDatabaseResource;
 use Flarum\Api\Schema;
 use Flarum\Api\Sort\SortColumn;
-use Flarum\Group\Group;
 use Flarum\Locale\TranslatorInterface;
 use Flarum\User\User;
 use Illuminate\Database\Eloquent\Builder;
@@ -286,13 +285,42 @@ class SupportCategoryResource extends AbstractDatabaseResource
                         return;
                     }
 
-                    $group = Group::query()->find($targetId);
-                    if (! $group) {
-                        throw new BadRequestException($this->translator->trans('linkrobins-support.api.default_assigned_group_invalid'));
-                    }
-
                     $cat->default_assigned_group_id = $targetId;
                 }),
         ];
+    }
+
+    public function saving(object $model, Context $context): ?object
+    {
+        /** @var SupportCategory $model */
+        $body = $context->body();
+        $sentAssignee = data_get($body, 'data.relationships.defaultAssignee.data') !== null;
+        $sentGroup = data_get($body, 'data.relationships.defaultAssignedGroup.data') !== null;
+
+        if ($model->is_silent) {
+            if ($sentAssignee || $sentGroup) {
+                throw new BadRequestException($this->translator->trans('linkrobins-support.api.routing_mode_conflict'));
+            }
+
+            // Switching a routed category to silent clears prior default targets.
+            $model->default_assignee_id = null;
+            $model->default_assigned_group_id = null;
+
+            return $model;
+        }
+
+        if ($model->default_assignee_id !== null && $model->default_assigned_group_id !== null) {
+            if ($sentAssignee && $sentGroup) {
+                throw new BadRequestException($this->translator->trans('linkrobins-support.api.routing_mode_conflict'));
+            }
+
+            if ($sentAssignee) {
+                $model->default_assigned_group_id = null;
+            } elseif ($sentGroup) {
+                $model->default_assignee_id = null;
+            }
+        }
+
+        return $model;
     }
 }

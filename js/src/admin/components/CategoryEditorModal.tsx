@@ -60,6 +60,8 @@ export default class CategoryEditorModal extends FormModal<any> {
 
     if (isSilent) {
       this.routingMode = 'silent';
+      this.defaultAssigneeId = '';
+      this.defaultAssignedGroupId = '';
     } else if (this.defaultAssignedGroupId) {
       this.routingMode = 'group';
     } else if (this.defaultAssigneeId) {
@@ -516,8 +518,8 @@ export default class CategoryEditorModal extends FormModal<any> {
     m.redraw();
 
     const isSilent = this.isSilent;
-    const assigneeId = this.defaultAssigneeId;
-    const groupId = this.defaultAssignedGroupId;
+    const assigneeId = isSilent ? '' : this.defaultAssigneeId;
+    const groupId = isSilent ? '' : this.defaultAssignedGroupId;
 
     const attrs: any = {
       name: this.name.trim(),
