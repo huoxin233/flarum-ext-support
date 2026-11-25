@@ -560,9 +560,7 @@ class SupportTicketResource extends AbstractDatabaseResource
 
         if ($actor->isGuest() || empty($model->category_id)) {
             $ticket = parent::create($model, $context);
-            if ($context instanceof FlarumContext) {
-                $this->throttler->recordHit($context->request, $actor);
-            }
+            $this->recordPostCreateSideEffects($actor, $context, clearCache: ! $actor->isGuest());
 
             return $ticket;
         }
@@ -570,15 +568,15 @@ class SupportTicketResource extends AbstractDatabaseResource
         $ticket = SupportTicket::query()->getConnection()->transaction(function () use ($model, $context, $actor) {
             // Lock this user's row for the duration of the insert so their
             // concurrent creates serialize (a no-op on SQLite, which already
-            // serializes writes). The re-check below then sees a consistent,
-            // committed count.
+            // serializes writes). The re-check below bypasses the cache so it
+            // always sees the committed count.
             User::query()->whereKey($actor->id)->lockForUpdate()->first();
 
             $category = $model->relationLoaded('category') && $model->category
                 ? $model->category
                 : SupportCategory::query()->find((int) $model->category_id);
             if ($category) {
-                $rate = $this->rateLimiter->check($actor, $category);
+                $rate = $this->rateLimiter->check($actor, $category, fresh: true);
                 if (! $rate['ok']) {
                     throw new ForbiddenException($this->rateLimiter->describe($rate));
                 }
@@ -605,12 +603,34 @@ class SupportTicketResource extends AbstractDatabaseResource
 
         // Clear the cached quota counts and start the anti-flood cooldown only
         // after the transaction has committed and the ticket is persisted.
-        $this->rateLimiter->clearUserQuotaCache($actor);
-        if ($context instanceof FlarumContext) {
-            $this->throttler->recordHit($context->request, $actor);
-        }
+        $this->recordPostCreateSideEffects($actor, $context, clearCache: true);
 
         return $ticket;
+    }
+
+    protected function recordPostCreateSideEffects(User $actor, Context $context, bool $clearCache): void
+    {
+        if ($clearCache) {
+            try {
+                $this->rateLimiter->clearUserQuotaCache($actor);
+            } catch (\Throwable $e) {
+                $this->log->warning('[linkrobins/support] failed to clear quota cache after ticket create', [
+                    'user_id' => $actor->id,
+                    'exception' => $e,
+                ]);
+            }
+        }
+
+        if ($context instanceof FlarumContext) {
+            try {
+                $this->throttler->recordHit($actor);
+            } catch (\Throwable $e) {
+                $this->log->warning('[linkrobins/support] failed to record throttle hit after ticket create', [
+                    'user_id' => $actor->id,
+                    'exception' => $e,
+                ]);
+            }
+        }
     }
 
     /**

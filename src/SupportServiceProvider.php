@@ -158,25 +158,25 @@ class SupportServiceProvider extends AbstractServiceProvider
             }
         });
 
-        SupportTicket::updated(function (SupportTicket $ticket) use ($rateLimiter) {
+        SupportTicket::updated(function (SupportTicket $ticket) use ($rateLimiter, $log) {
             if ($ticket->user_id && $ticket->wasChanged(['status', 'category_id', 'deleted_at'])) {
-                static::afterCommit(fn () => $rateLimiter->clearUserQuotaCache((int) $ticket->user_id));
+                static::clearQuotaCacheAfterCommit($rateLimiter, (int) $ticket->user_id, $log);
             }
         });
 
-        SupportTicket::deleted(function (SupportTicket $ticket) use ($rateLimiter) {
+        SupportTicket::deleted(function (SupportTicket $ticket) use ($rateLimiter, $log) {
             if ($ticket->user_id) {
-                static::afterCommit(fn () => $rateLimiter->clearUserQuotaCache((int) $ticket->user_id));
+                static::clearQuotaCacheAfterCommit($rateLimiter, (int) $ticket->user_id, $log);
             }
         });
 
-        SupportTicket::restored(function (SupportTicket $ticket) use ($rateLimiter) {
+        SupportTicket::restored(function (SupportTicket $ticket) use ($rateLimiter, $log) {
             if ($ticket->user_id) {
-                static::afterCommit(fn () => $rateLimiter->clearUserQuotaCache((int) $ticket->user_id));
+                static::clearQuotaCacheAfterCommit($rateLimiter, (int) $ticket->user_id, $log);
             }
         });
 
-        SupportCategory::updated(function (SupportCategory $category) use ($rateLimiter) {
+        SupportCategory::updated(function (SupportCategory $category) use ($rateLimiter, $log) {
             if (! $category->wasChanged('ticket_type')) {
                 return;
             }
@@ -191,11 +191,32 @@ class SupportServiceProvider extends AbstractServiceProvider
                 ->all();
 
             if ($ids !== []) {
-                static::afterCommit(function () use ($rateLimiter, $ids) {
+                static::afterCommit(function () use ($rateLimiter, $ids, $log) {
                     foreach ($ids as $userId) {
-                        $rateLimiter->clearUserQuotaCache($userId);
+                        try {
+                            $rateLimiter->clearUserQuotaCache($userId);
+                        } catch (\Throwable $e) {
+                            $log->warning('[linkrobins/support] failed to clear user quota cache', [
+                                'user_id' => $userId,
+                                'exception' => $e,
+                            ]);
+                        }
                     }
                 });
+            }
+        });
+    }
+
+    protected static function clearQuotaCacheAfterCommit(RateLimiter $rateLimiter, int $userId, LoggerInterface $log): void
+    {
+        static::afterCommit(function () use ($rateLimiter, $userId, $log) {
+            try {
+                $rateLimiter->clearUserQuotaCache($userId);
+            } catch (\Throwable $e) {
+                $log->warning('[linkrobins/support] failed to clear user quota cache', [
+                    'user_id' => $userId,
+                    'exception' => $e,
+                ]);
             }
         });
     }
