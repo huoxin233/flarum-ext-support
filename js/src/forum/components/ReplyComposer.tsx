@@ -40,7 +40,7 @@ export default class ReplyComposer extends Component {
       : extractText(app.translator.trans('linkrobins-support.forum.reply.placeholder'));
 
     return (
-      <div className={'LinkRobinsSupport-replyForm' + (isInternal ? ' is-internal' : '')}>
+      <div className="LinkRobinsSupport-replyForm">
         <textarea
           className="FormControl LinkRobinsSupport-body"
           rows={5}
@@ -103,6 +103,18 @@ export default class ReplyComposer extends Component {
               />
             </span>
           )}
+          {canPostInternal && (
+            <Tooltip text={internalLabel}>
+              <Button
+                className={'Button Button--icon LinkRobinsSupport-internalBtn' + (isInternal ? ' active' : '')}
+                icon="fas fa-lock"
+                aria-label={internalLabel}
+                aria-pressed={isInternal ? 'true' : 'false'}
+                disabled={a.posting}
+                onclick={() => a.onToggleInternal(!a.replyIsInternal)}
+              />
+            </Tooltip>
+          )}
           <Button
             className={'Button Button--primary' + (isInternal ? ' LinkRobinsSupport-btn--internal' : '')}
             icon={isInternal ? 'fas fa-lock' : undefined}
@@ -116,18 +128,6 @@ export default class ReplyComposer extends Component {
                 ? app.translator.trans('linkrobins-support.forum.reply.internal_note')
                 : app.translator.trans('linkrobins-support.forum.reply.post_reply')}
           </Button>
-          {canPostInternal && (
-            <Tooltip text={internalLabel}>
-              <Button
-                className={'Button Button--icon Button--link LinkRobinsSupport-internalBtn' + (isInternal ? ' active' : '')}
-                icon="fas fa-lock"
-                aria-label={internalLabel}
-                aria-pressed={isInternal ? 'true' : 'false'}
-                disabled={a.posting}
-                onclick={() => a.onToggleInternal(!a.replyIsInternal)}
-              />
-            </Tooltip>
-          )}
         </div>
       </div>
     );

@@ -666,10 +666,6 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-
-    &.is-internal .LinkRobinsSupport-body {
-        border-color: rgba(243, 156, 18, 0.45);
-    }
 }
 
 .LinkRobinsSupport-replyForm-actions {
@@ -684,37 +680,30 @@
 }
 
 .Button.Button--primary.LinkRobinsSupport-btn--internal {
-    background: #d68910;
-    border-color: #b9770e;
-    color: #fff;
-
-    &:hover,
-    &:focus,
-    &:active {
-        background: #b9770e;
-        border-color: #935116;
-        color: #fff;
-    }
+    --button-color: var(--text-on-dark);
+    --button-bg: var(--control-warning-color);
+    --button-bg-hover: color-mix(in srgb, var(--control-warning-color) 90%, black);
+    --button-bg-active: color-mix(in srgb, var(--control-warning-color) 82%, black);
+    --button-bg-disabled: var(--control-warning-color);
 }
 
 .Button.LinkRobinsSupport-internalBtn {
     font-size: 15px;
 
     &.active {
-        color: #d68910;
-        background: rgba(214, 137, 16, 0.12);
+        color: var(--control-warning-color);
+        background: color-mix(in srgb, var(--control-warning-color) 14%, transparent);
 
         &:hover,
-        &:focus {
-            color: #b9770e;
-            background: rgba(214, 137, 16, 0.18);
+        &:focus-visible {
+            background: color-mix(in srgb, var(--control-warning-color) 22%, transparent);
         }
     }
 }
 
 @media @phone {
     .LinkRobinsSupport-replyComposer .App-primaryControl > .Button.LinkRobinsSupport-btn--internal {
-        color: #d68910 !important;
+        color: var(--control-warning-color) !important;
     }
 }
 
