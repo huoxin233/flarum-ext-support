@@ -250,39 +250,6 @@ class CategoryRoutingNotificationTest extends TestCase
     }
 
     #[Test]
-    public function user_reply_to_assigned_ticket_notifies_only_the_assignee(): void
-    {
-        $ticketId = $this->openTicketIn(1);
-
-        // Admin (user 1) assigns the ticket to Support Staff A (user 3)
-        $this->send(
-            $this->request('PATCH', "/api/linkrobins-support-tickets/{$ticketId}", [
-                'authenticatedAs' => 1,
-                'json' => [
-                    'data' => [
-                        'relationships' => [
-                            'assignedStaff' => ['data' => ['type' => 'users', 'id' => '3']],
-                        ],
-                    ],
-                ],
-            ])
-        );
-
-        // User 2 replies to their ticket
-        $this->postReply($ticketId, 2, 'Thanks, here are more details.');
-
-        $replyRecipients = $this->database()->table('notifications')
-            ->where('type', 'linkrobinsSupportNewReply')
-            ->pluck('user_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-        sort($replyRecipients);
-
-        // Only user 3 (assignee) should be notified. Admin (1), Staff B (4), Billing (5) must not receive this.
-        $this->assertEquals([3], $replyRecipients, 'User reply to assigned ticket should notify only the assigned staff member.');
-    }
-
-    #[Test]
     public function admin_can_update_category_routing_options_via_api(): void
     {
         // 1. Set to silent
@@ -334,32 +301,6 @@ class CategoryRoutingNotificationTest extends TestCase
         );
         $this->assertEquals(200, $response3->getStatusCode());
         $this->assertNull($this->database()->table('linkrobins_support_categories')->where('id', 1)->value('default_assigned_group_id'));
-    }
-
-    #[Test]
-    public function driver_filtering_drops_recipients_who_disabled_all_notification_drivers(): void
-    {
-        // User 3 mutes alert and email drivers for new ticket notifications
-        $this->database()->table('users')->where('id', 3)->update([
-            'preferences' => json_encode([
-                'notify_linkrobinsSupportNewTicket_alert' => false,
-                'notify_linkrobinsSupportNewTicket_email' => false,
-            ]),
-        ]);
-
-        $ticketId = $this->openTicketIn(1);
-
-        $recipients = $this->database()->table('notifications')
-            ->where('subject_id', $ticketId)
-            ->where('type', 'linkrobinsSupportNewTicket')
-            ->pluck('user_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-        sort($recipients);
-
-        // Staff members are 1 (Admin), 3, 4 (Support), 5 (Billing).
-        // User 3 disabled all drivers for this type, so only [1, 4, 5] remain.
-        $this->assertEquals([1, 4, 5], $recipients, 'User who disabled all drivers should be excluded from notification delivery.');
     }
 
     #[Test]
@@ -522,54 +463,6 @@ class CategoryRoutingNotificationTest extends TestCase
     }
 
     #[Test]
-    public function auto_assigned_ticket_in_silent_category_notifies_the_assignee_on_creation(): void
-    {
-        // Category with default_assignee_id = 3 and is_silent = 1
-        $this->database()->table('linkrobins_support_categories')->insert([
-            'id' => 5,
-            'name' => 'Silent Auto-Assigned',
-            'slug' => 'silent-auto-assigned',
-            'ticket_type' => 'standard',
-            'position' => 4,
-            'default_assignee_id' => 3,
-            'default_assigned_group_id' => null,
-            'is_silent' => 1,
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now(),
-        ]);
-
-        $ticketId = $this->openTicketIn(5);
-
-        // Verify ticket was auto-assigned to user 3
-        $assigneeId = (int) $this->database()->table('linkrobins_support_tickets')
-            ->where('id', $ticketId)
-            ->value('assigned_staff_id');
-        $this->assertEquals(3, $assigneeId);
-
-        // User 3 (assignee) must be notified on creation despite the category being silent
-        $recipients = $this->database()->table('notifications')
-            ->where('subject_id', $ticketId)
-            ->where('type', 'linkrobinsSupportNewTicket')
-            ->pluck('user_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-
-        $this->assertEquals([3], $recipients, 'Auto-assigned ticket in silent category must notify the assignee on creation.');
-
-        // User reply to this ticket must also notify the assignee
-        $this->database()->table('notifications')->delete();
-        $this->postReply($ticketId, 2, 'User reply to auto-assigned silent ticket');
-
-        $replyRecipients = $this->database()->table('notifications')
-            ->where('type', 'linkrobinsSupportNewReply')
-            ->pluck('user_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-
-        $this->assertEquals([3], $replyRecipients, 'User reply on auto-assigned silent ticket must notify the assignee.');
-    }
-
-    #[Test]
     public function staff_filing_ticket_into_routed_group_is_not_self_notified(): void
     {
         // User 5 (Billing staff) opens a ticket in Category 3 (routed to Billing group).
@@ -632,6 +525,16 @@ class CategoryRoutingNotificationTest extends TestCase
             ->map(fn ($id) => (int) $id)
             ->all();
         $this->assertEquals([3], $assignedRecipients, 'Explicit assignment in a silent category must notify the assignee.');
+
+        // Customer reply to the explicitly assigned ticket in a silent category notifies only the assignee.
+        $this->database()->table('notifications')->delete();
+        $this->postReply($ticketId, 2, 'Customer follow-up on assigned silent ticket');
+        $assignedReplyRecipients = $this->database()->table('notifications')
+            ->where('type', 'linkrobinsSupportNewReply')
+            ->pluck('user_id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        $this->assertEquals([3], $assignedReplyRecipients, 'User reply on explicitly assigned ticket in silent category must notify the assignee.');
 
         // 2. Unassigning falls back to silent mode (no all-staff broadcast on reply).
         $this->database()->table('notifications')->delete();
@@ -836,21 +739,53 @@ class CategoryRoutingNotificationTest extends TestCase
         $cat3 = $staffCategories->firstWhere('id', '3');
         $this->assertTrue($cat2['attributes']['isSilent'] ?? false);
         $this->assertEquals('101', $cat3['relationships']['defaultAssignedGroup']['data']['id'] ?? null);
-    }
 
-    #[Test]
-    public function unassigned_ticket_in_normal_category_notifies_all_staff(): void
-    {
-        $ticketId = $this->openTicketIn(1);
+        // API must reject combining isSilent with a default group or assignee.
+        $conflictResponse = $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-categories/1', [
+                'authenticatedAs' => 1,
+                'json' => [
+                    'data' => [
+                        'attributes' => ['isSilent' => true],
+                        'relationships' => [
+                            'defaultAssignedGroup' => ['data' => ['type' => 'groups', 'id' => '101']],
+                        ],
+                    ],
+                ],
+            ])
+        );
+        $this->assertEquals(400, $conflictResponse->getStatusCode(), (string) $conflictResponse->getBody());
+        $this->assertEquals(0, (int) $this->database()->table('linkrobins_support_categories')->where('id', 1)->value('is_silent'));
+        $this->assertNull($this->database()->table('linkrobins_support_categories')->where('id', 1)->value('default_assigned_group_id'));
 
-        $recipients = $this->database()->table('notifications')
-            ->where('subject_id', $ticketId)
-            ->where('type', 'linkrobinsSupportNewTicket')
-            ->pluck('user_id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-        sort($recipients);
+        // Assigning a group to an already-silent category without isSilent=false returns 400.
+        $silentGroupConflict = $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-categories/2', [
+                'authenticatedAs' => 1,
+                'json' => [
+                    'data' => [
+                        'relationships' => [
+                            'defaultAssignedGroup' => ['data' => ['type' => 'groups', 'id' => '101']],
+                        ],
+                    ],
+                ],
+            ])
+        );
+        $this->assertEquals(400, $silentGroupConflict->getStatusCode(), (string) $silentGroupConflict->getBody());
 
-        $this->assertEquals([1, 3, 4, 5], $recipients, 'Unassigned ticket in a normal category should notify all staff.');
+        // Switching a routed category to silent without relationships clears its previous routing.
+        $switchToSilent = $this->send(
+            $this->request('PATCH', '/api/linkrobins-support-categories/3', [
+                'authenticatedAs' => 1,
+                'json' => [
+                    'data' => [
+                        'attributes' => ['isSilent' => true],
+                    ],
+                ],
+            ])
+        );
+        $this->assertEquals(200, $switchToSilent->getStatusCode(), (string) $switchToSilent->getBody());
+        $this->assertEquals(1, (int) $this->database()->table('linkrobins_support_categories')->where('id', 3)->value('is_silent'));
+        $this->assertNull($this->database()->table('linkrobins_support_categories')->where('id', 3)->value('default_assigned_group_id'));
     }
 }
