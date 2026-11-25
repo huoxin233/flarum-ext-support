@@ -887,7 +887,8 @@ export default class SupportShowPage extends Page<any> {
   // body), or from the fallback textarea with no args.
   _postReply(content?: string, isInternal?: boolean, body?: any) {
     const text = typeof content === 'string' ? content : this.replyText;
-    const internal = typeof isInternal === 'boolean' ? isInternal : !!this.replyIsInternal;
+    const canPostInternal = !!(this.ticket && this.ticket.canPostInternalNote());
+    const internal = canPostInternal && (typeof isInternal === 'boolean' ? isInternal : !!this.replyIsInternal);
     if (!text || text.trim() === '') return;
 
     this.posting = true;
