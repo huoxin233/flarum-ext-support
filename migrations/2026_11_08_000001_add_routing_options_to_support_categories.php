@@ -16,11 +16,13 @@ return [
             if (! $schema->hasColumn('linkrobins_support_categories', 'default_assigned_group_id')) {
                 // Null means no group routing: tickets in this category route
                 // according to default_assignee_id, or fall back to all staff.
+                //
+                // Deliberately no foreign key, matching default_assignee_id: an
+                // auto-named constraint exceeds MySQL's 64-char limit, a custom
+                // unprefixed name collides across prefixed installs, and SQLite
+                // refuses to drop columns still bound to a foreign key on rollback.
+                // SupportCategory::effectiveDefaultGroup() treats missing IDs as null.
                 $table->integer('default_assigned_group_id')->unsigned()->nullable();
-
-                $table->foreign('default_assigned_group_id', 'support_categories_default_group_foreign')
-                    ->references('id')->on('groups')
-                    ->nullOnDelete();
             }
 
             if (! $schema->hasColumn('linkrobins_support_categories', 'is_silent')) {
@@ -31,14 +33,6 @@ return [
     },
 
     'down' => function (Builder $schema) {
-        try {
-            $schema->table('linkrobins_support_categories', function (Blueprint $table) {
-                $table->dropForeign('support_categories_default_group_foreign');
-            });
-        } catch (\Throwable $e) {
-            // Already absent (partial rollback) -- nothing to drop.
-        }
-
         $schema->table('linkrobins_support_categories', function (Blueprint $table) use ($schema) {
             if ($schema->hasColumn('linkrobins_support_categories', 'default_assigned_group_id')) {
                 $table->dropColumn('default_assigned_group_id');
