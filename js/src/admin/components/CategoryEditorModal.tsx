@@ -265,7 +265,15 @@ export default class CategoryEditorModal extends FormModal<any> {
     if (this.routingMode === 'group') {
       items.add(
         'routingTarget',
-        <div className="Form-group">
+        <div
+          className="Form-group"
+          onupdate={(vnode: any) => {
+            const select = vnode.dom && vnode.dom.querySelector('select');
+            if (select && this.defaultAssignedGroupId && select.value !== this.defaultAssignedGroupId) {
+              select.value = this.defaultAssignedGroupId;
+            }
+          }}
+        >
           <label>{app.translator.trans('linkrobins-support.admin.category_editor.field_target_group')}</label>
           <Select
             value={this.defaultAssignedGroupId}
@@ -281,10 +289,20 @@ export default class CategoryEditorModal extends FormModal<any> {
     } else if (this.routingMode === 'user') {
       items.add(
         'routingTarget',
-        <div className="Form-group">
+        <div
+          className="Form-group"
+          onupdate={(vnode: any) => {
+            const select = vnode.dom && vnode.dom.querySelector('select');
+            if (!select) return;
+            const target = this.loadingStaff ? '' : this.defaultAssigneeId;
+            if (target && select.value !== target) {
+              select.value = target;
+            }
+          }}
+        >
           <label>{app.translator.trans('linkrobins-support.admin.category_editor.field_target_user')}</label>
           <Select
-            value={this.defaultAssigneeId}
+            value={this.loadingStaff ? '' : this.defaultAssigneeId}
             disabled={this.saving || this.loadingStaff}
             options={this._staffOptions()}
             onchange={(value: string) => {
