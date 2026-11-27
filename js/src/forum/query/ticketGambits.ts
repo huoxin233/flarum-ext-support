@@ -1,16 +1,24 @@
 import app from 'flarum/forum/app';
 import type IGambit from 'flarum/common/query/IGambit';
-import { BooleanGambit, KeyValueGambit, GambitType, type GroupedGambitSuggestion } from 'flarum/common/query/IGambit';
+import { BooleanGambit, KeyValueGambit, GambitType, type GroupedGambitSuggestion, type GambitValueOption } from 'flarum/common/query/IGambit';
 import { canHandleSupportTickets } from '../utils/permissions';
 import { loadCategories } from '../utils/api';
 import { ticketTypes } from '../../common/ticketTypes';
 
 export const SUPPORT_TICKETS_RESOURCE = 'linkrobins-support-tickets';
 
-export type GambitValueOption = {
-  value: string;
-  label?: string;
-};
+function formatMultiValueFromFilter(key: string, value: any, negate: boolean): string {
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => formatMultiValueFromFilter(key, v, negate))
+      .filter(Boolean)
+      .join(' ');
+  }
+  if (typeof value === 'string' && value) {
+    return `${negate ? '-' : ''}${key}:${value}`;
+  }
+  return '';
+}
 
 /**
  * Filter support tickets by status: is:open, is:in-progress, is:awaiting-response, is:resolved, is:closed.
@@ -37,9 +45,7 @@ export class StatusGambit implements IGambit<GambitType.Grouped> {
   }
 
   pattern(): string {
-    const is = this.groupKey();
-    const group = is === 'is' ? 'is' : `(?:${is}|is)`;
-    return `${group}:(open|in[-_]progress|awaiting[-_](?:response|user)|resolved|closed)`;
+    return `${this.groupKey()}:(open|in[-_]progress|awaiting[-_](?:response|user)|resolved|closed)`;
   }
 
   canonicalPattern(): string {
@@ -102,14 +108,8 @@ export class AssignedGambit extends KeyValueGambit {
     return 'assigned';
   }
 
-  pattern(): string {
-    const key = this.key();
-    const matchKey = key === 'assigned' ? 'assigned' : `(?:${key}|assigned)`;
-    return `${matchKey}:(me|none|unassigned)`;
-  }
-
-  canonicalPattern(): string {
-    return 'assigned:(me|none|unassigned)';
+  valuePattern(): string {
+    return '(me|none|unassigned)';
   }
 
   toFilter(matches: string[], negate: boolean): Record<string, any> {
@@ -168,28 +168,11 @@ export class MineGambit extends BooleanGambit {
     return 'mine';
   }
 
-  pattern(): string {
-    const is = this.groupKey();
-    const group = is === 'is' ? 'is' : `(?:${is}|is)`;
-    const key = this.key();
-    const matchKey = key === 'mine' ? 'mine' : `(?:${key}|mine)`;
-    return `${group}:(${matchKey})`;
-  }
-
-  canonicalPattern(): string {
-    return 'is:mine';
-  }
-
   toFilter(_matches: string[], negate: boolean): Record<string, any> {
     const key = (negate ? '-' : '') + this.filterKey();
     return {
       [key]: '1',
     };
-  }
-
-  fromFilter(_value: any, negate: boolean): string {
-    const is = this.groupKey();
-    return `${negate ? '-' : ''}${is}:${this.key()}`;
   }
 
   enabled(): boolean {
@@ -215,16 +198,6 @@ export class TicketTypeGambit extends KeyValueGambit {
 
   filterKey(): string {
     return 'ticketType';
-  }
-
-  pattern(): string {
-    const key = this.key();
-    const matchKey = key === 'type' ? 'type' : `(?:${key}|type)`;
-    return `${matchKey}:` + this.valuePattern();
-  }
-
-  canonicalPattern(): string {
-    return 'type:' + this.valuePattern();
   }
 
   values(): (string | GambitValueOption)[] {
@@ -260,16 +233,6 @@ export class AuthorGambit extends KeyValueGambit {
     return 'author';
   }
 
-  pattern(): string {
-    const key = this.key();
-    const matchKey = key === 'author' ? 'author' : `(?:${key}|author)`;
-    return `${matchKey}:` + this.valuePattern();
-  }
-
-  canonicalPattern(): string {
-    return 'author:' + this.valuePattern();
-  }
-
   enabled(): boolean {
     return canHandleSupportTickets();
   }
@@ -301,35 +264,12 @@ export class PriorityGambit extends KeyValueGambit {
     return '([a-zA-Z0-9_,-]+)';
   }
 
-  pattern(): string {
-    const key = this.key();
-    const matchKey = key === 'priority' ? 'priority' : `(?:${key}|priority)`;
-    return `${matchKey}:` + this.valuePattern();
-  }
-
-  canonicalPattern(): string {
-    return 'priority:' + this.valuePattern();
-  }
-
   gambitValueToFilterValue(value: string): string[] {
     return [value.toLowerCase()];
   }
 
-  toFilter(matches: string[], negate: boolean): Record<string, any> {
-    const key = (negate ? '-' : '') + this.filterKey();
-    return {
-      [key]: this.gambitValueToFilterValue(matches[1]),
-    };
-  }
-
   fromFilter(value: any, negate: boolean): string {
-    if (Array.isArray(value)) {
-      return value.map((v) => this.fromFilter(v, negate)).join(' ');
-    }
-    if (typeof value === 'string' && value) {
-      return `${negate ? '-' : ''}${this.key()}:${value}`;
-    }
-    return '';
+    return formatMultiValueFromFilter(this.key(), value, negate);
   }
 
   values(): (string | GambitValueOption)[] {
@@ -387,7 +327,7 @@ export class CategoryGambit extends KeyValueGambit {
 
   pattern(): string {
     const key = this.key();
-    const matchKey = key === 'category' ? '(?:category|cat)' : `(?:${key}|category|cat)`;
+    const matchKey = key === 'category' ? '(?:category|cat)' : `(?:${key}|cat)`;
     return `${matchKey}:` + this.valuePattern();
   }
 
@@ -399,44 +339,26 @@ export class CategoryGambit extends KeyValueGambit {
     return [value];
   }
 
-  toFilter(matches: string[], negate: boolean): Record<string, any> {
-    const key = (negate ? '-' : '') + this.filterKey();
-    return {
-      [key]: this.gambitValueToFilterValue(matches[1]),
-    };
-  }
-
   fromFilter(value: any, negate: boolean): string {
-    if (Array.isArray(value)) {
-      return value.map((v) => this.fromFilter(v, negate)).join(' ');
-    }
-    if (typeof value === 'string' && value) {
-      return `${negate ? '-' : ''}${this.key()}:${value}`;
-    }
-    return '';
+    return formatMultiValueFromFilter(this.key(), value, negate);
   }
 
   values(): (string | GambitValueOption)[] {
     const hasRecentlyFailed = CategoryGambit.lastLoadFailedAt && Date.now() - CategoryGambit.lastLoadFailedAt < CategoryGambit.RETRY_COOLDOWN_MS;
 
     if (!CategoryGambit.loadedCategories && !CategoryGambit.loadingCategories && !hasRecentlyFailed) {
-      const storeCategories = (app.store.all('linkrobins-support-categories') || []) as any[];
-      if (storeCategories.length === 0) {
-        CategoryGambit.loadingCategories = true;
-        loadCategories()
-          .then(() => {
-            CategoryGambit.loadedCategories = true;
-            m.redraw();
-          })
-          .catch(() => {
-            CategoryGambit.lastLoadFailedAt = Date.now();
-          })
-          .finally(() => {
-            CategoryGambit.loadingCategories = false;
-          });
-      } else {
-        CategoryGambit.loadedCategories = true;
-      }
+      CategoryGambit.loadingCategories = true;
+      loadCategories()
+        .then(() => {
+          CategoryGambit.loadedCategories = true;
+          m.redraw();
+        })
+        .catch(() => {
+          CategoryGambit.lastLoadFailedAt = Date.now();
+        })
+        .finally(() => {
+          CategoryGambit.loadingCategories = false;
+        });
     }
 
     return ((app.store.all('linkrobins-support-categories') || []) as any[])
