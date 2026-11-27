@@ -328,4 +328,30 @@ class SearchTicketsTest extends TestCase
         $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
         $this->assertEquals([3], $ids);
     }
+
+    #[Test]
+    public function staff_can_filter_by_array_wrapped_comma_separated_categories(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['category' => ['general,billing']]])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        sort($ids);
+        $this->assertEquals([1, 2, 3], $ids);
+    }
+
+    #[Test]
+    public function staff_can_filter_by_array_wrapped_comma_separated_priorities(): void
+    {
+        $response = $this->send(
+            $this->request('GET', '/api/linkrobins-support-tickets', ['authenticatedAs' => 3])
+                ->withQueryParams(['filter' => ['priority' => ['urgent,normal']]])
+        );
+        $this->assertEquals(200, $response->getStatusCode());
+        $ids = array_map(fn ($t) => (int) $t['id'], json_decode((string) $response->getBody(), true)['data']);
+        sort($ids);
+        $this->assertEquals([1, 2], $ids);
+    }
 }
