@@ -54,7 +54,7 @@ export class StatusGambit implements IGambit<GambitType.Grouped> {
 
   toFilter(matches: string[], negate: boolean): Record<string, any> {
     const key = (negate ? '-' : '') + this.filterKey();
-    let val = matches[1].toLowerCase().replace('-', '_');
+    let val = matches[1].toLowerCase().replace(/-/g, '_');
     if (val === 'awaiting_response') {
       val = 'awaiting_user';
     }
@@ -114,7 +114,8 @@ export class AssignedGambit extends KeyValueGambit {
 
   toFilter(matches: string[], negate: boolean): Record<string, any> {
     const key = (negate ? '-' : '') + this.filterKey();
-    const val = matches[1] === 'unassigned' ? 'none' : matches[1];
+    const raw = matches[1].toLowerCase();
+    const val = raw === 'unassigned' ? 'none' : raw;
     return {
       [key]: val,
     };
