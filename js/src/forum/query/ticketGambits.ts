@@ -112,13 +112,9 @@ export class AssignedGambit extends KeyValueGambit {
     return '(me|none|unassigned)';
   }
 
-  toFilter(matches: string[], negate: boolean): Record<string, any> {
-    const key = (negate ? '-' : '') + this.filterKey();
-    const raw = matches[1].toLowerCase();
-    const val = raw === 'unassigned' ? 'none' : raw;
-    return {
-      [key]: val,
-    };
+  gambitValueToFilterValue(value: string): string {
+    const raw = value.toLowerCase();
+    return raw === 'unassigned' ? 'none' : raw;
   }
 
   fromFilter(value: any, negate: boolean): string {
